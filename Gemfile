@@ -28,7 +28,7 @@
 
 source 'https://rubygems.org'
 
-gem "rails", "~> 3.2.21"
+gem "rails", "~> 3.2.22"
 
 gem "coderay", "~> 1.0.9"
 gem "rubytree", "~> 0.8.3"
@@ -64,7 +64,7 @@ gem 'ruby-duration', '~> 3.2.0'
 # This can be removed as soon as said bugfix is integrated into rabl itself.
 # See: config/initializers/rabl_hack.rb
 gem 'rabl', '0.9.3'
-gem 'multi_json'
+gem 'multi_json', '~> 1.11.0'
 gem 'oj', '~> 2.11.4'
 
 # will need to be removed once we are on rails4 as it will be part of the rails4 core
@@ -117,6 +117,8 @@ gem 'unicorn'
 # Security fixes
 # Gems we don't depend directly on, but specify here to make sure we don't use a vulnerable
 # version. Please add a link to a security advisory when adding a Gem here.
+
+gem 'rack', '~>1.4.6'
 
 gem 'i18n', '~> 0.6.8'
 # see https://groups.google.com/forum/#!topic/ruby-security-ann/pLrh6DUw998
