@@ -33,7 +33,11 @@
 # instead of editing this one. Cucumber will automatically load all features/**/*.rb
 # files.
 
-require 'simplecov'
+if ENV['COVERAGE']
+  require 'simplecov'
+  SimpleCov.start 'rails'
+end
+
 require 'cucumber/rails'
 require 'cucumber/rspec/doubles'
 require 'capybara-screenshot/cucumber'
@@ -56,19 +60,47 @@ require_relative 'paths.rb'
 # steps to use the XPath syntax.
 Capybara.configure do |config|
   config.default_selector = :css
-  config.default_wait_time = 10
+  config.default_max_wait_time = 5
   config.exact_options = true
   config.ignore_hidden_elements = true
   config.match = :one
   config.visible_text_only = true
 end
 
+unless (env_no = ENV['TEST_ENV_NUMBER'].to_i).zero?
+  Capybara.server_port = 8888 + env_no
+
+  # Give firefox some time to setup / load himself
+  sleep env_no * 5
+end
+
 Capybara.register_driver :selenium do |app|
   require 'selenium/webdriver'
   Selenium::WebDriver::Firefox::Binary.path = ENV['FIREFOX_BINARY_PATH'] ||
     Selenium::WebDriver::Firefox::Binary.path
-  Capybara::Selenium::Driver.new(app, browser: :firefox)
+
+  profile = Selenium::WebDriver::Firefox::Profile.new
+  profile['intl.accept_languages'] = 'en,en-us'
+  profile['browser.startup.homepage_override.mstone'] = 'ignore'
+  profile['startup.homepage_welcome_url.additional'] = 'about:blank'
+
+  Capybara::Selenium::Driver.new(app, browser: :firefox, profile: profile)
 end
+
+require 'capybara/poltergeist'
+Capybara.register_driver :poltergeist do |app|
+  options = {
+    js_errors: false,
+    window_size: [1200, 1000],
+    timeout: 60
+  }
+  Capybara::Poltergeist::Driver.new(app, options)
+end
+# Disable using poltergeist until we upgraded jenkins workers
+# Capybara.javascript_driver = :poltergeist
+
+# Use selenium until we upgraded jenkins workers
+Capybara.javascript_driver = :selenium
 
 # By default, any exception happening in your Rails application will bubble up
 # to Cucumber so that your scenario will fail. This is a different from how
@@ -99,7 +131,7 @@ end
 # See the DatabaseCleaner documentation for details. Example:
 #
 #   Before('@no-txn,@selenium,@culerity,@celerity,@javascript') do
-#     # { :except => [:widgets] } may not do what you expect here
+#     # { except: [:widgets] } may not do what you expect here
 #     # as tCucumber::Rails::Database.javascript_strategy overrides
 #     # this setting.
 #     DatabaseCleaner.strategy = :truncation
@@ -120,8 +152,14 @@ Before do |_scenario|
   page.driver.browser.switch_to.alert.accept rescue Selenium::WebDriver::Error::NoAlertOpenError
 end
 
+Before do
+  if Capybara.current_driver == :poltergeist
+    page.driver.headers = { "Accept-Language" => "en" }
+  end
+end
+
 # Capybara.register_driver :selenium do |app|
-#     Capybara::Selenium::Driver.new(app, :browser => :chrome)
+#     Capybara::Selenium::Driver.new(app, browser: :chrome)
 # end
 #
 

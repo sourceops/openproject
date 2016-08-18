@@ -75,7 +75,8 @@ describe ::API::V3::Projects::ProjectRepresenter do
       describe 'create work packages' do
         context 'user allowed to create work packages' do
           it 'has the correct path for a create form' do
-            is_expected.to be_json_eql(api_v3_paths.create_work_package_form(project.id).to_json)
+            is_expected
+              .to be_json_eql(api_v3_paths.create_project_work_package_form(project.id).to_json)
               .at_path('_links/createWorkPackage/href')
           end
 
@@ -107,6 +108,12 @@ describe ::API::V3::Projects::ProjectRepresenter do
             .at_path('_links/versions/href')
         end
       end
+    end
+  end
+
+  describe '.checked_permissions' do
+    it 'lists add_work_packages' do
+      expect(described_class.checked_permissions).to match_array([:add_work_packages])
     end
   end
 end

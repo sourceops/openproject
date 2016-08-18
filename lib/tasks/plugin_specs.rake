@@ -47,38 +47,23 @@ begin
 
   namespace :spec do
     desc 'Run core and plugin specs'
-    RSpec::Core::RakeTask.new(all: [:environment, 'assets:webpack']) do |t|
-      pattern = []
-      dirs = get_plugins_to_test
-      dirs << File.join(Rails.root).to_s
-      dirs.each do |dir|
-        if File.directory?(dir)
-          pattern << File.join(dir, 'spec', '**', '*_spec.rb').to_s
-        end
-      end
-      t.pattern = pattern
+    RSpec::Core::RakeTask.new(all: [:environment, 'assets:prepare_op']) do |t|
+      t.pattern = [Rails.root.join('spec').to_s] + Plugins::LoadPathHelper.spec_load_paths
     end
 
     desc 'Run plugin specs'
-    RSpec::Core::RakeTask.new(plugins: [:environment, 'assets:webpack']) do |t|
-      pattern = []
-      get_plugins_to_test.each do |dir|
-        if File.directory?(dir)
-          pattern << File.join(dir, 'spec', '**', '*_spec.rb').to_s
-        end
+    RSpec::Core::RakeTask.new(plugins: [:environment, 'assets:prepare_op']) do |t|
+      t.pattern = Plugins::LoadPathHelper.spec_load_paths
+
+      # in case we want to run plugins' specs and there are none
+      # we exit with positive message
+      if t.pattern.empty?
+        puts
+        puts '##### There are no specs for OpenProject plugins to be run.'
+        puts
+        exit(0)
       end
-      t.pattern = pattern
     end
   end
 rescue LoadError
-end
-
-def get_plugins_to_test
-  plugin_paths = []
-  Rails.application.config.plugins_to_test_paths.each do |dir|
-    if File.directory?(dir)
-      plugin_paths << File.join(dir).to_s
-    end
-  end
-  plugin_paths
 end

@@ -46,58 +46,46 @@ Feature: Wiki menu items
       | Title | AwesomePage |
     And I am already logged in as "bob"
 
-    @javascript
+  @javascript
   Scenario: Adding a main menu entry without index and toc links
     When I go to the wiki page "AwesomePage" for the project called "Awesome Project"
-    And I click on "More functions"
+    And I click on "More"
     And I click on "Configure menu item"
     And I fill in "Avocado Wuaärst" for "menu_items_wiki_menu_item_name"
     And I choose "Show as menu item in project navigation"
     And I press "Save"
     And I should see "Avocado Wuaärst" within "#main-menu"
 
-    @javascript
+  @javascript @selenium
   Scenario: Adding a main menu entry with index and toc links
     When I go to the wiki page "AwesomePage" for the project called "Awesome Project"
-    And I click on "More functions"
+    And I click on "More"
     And I click on "Configure menu item"
     And I fill in "Avocado Wuaärst" for "menu_items_wiki_menu_item_name"
     And I choose "Show as menu item in project navigation"
-    And I check "Show submenu item 'Create new child page'"
-    And I check "Show submenu item 'Table of Contents'"
     And I press "Save"
     When I go to the wiki page "AwesomePage" for the project called "Awesome Project"
     Then I should see "Avocado Wuaärst" within "#main-menu"
-    Then I should see "Table of Contents" within "#main-menu"
-    Then I should see "Create new child page" within "#main-menu"
 
-    @javascript
+  @javascript @selenium
   Scenario: Change existing entry
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
-    Then I should see "Table of Contents" within "#main-menu"
-    Then I should see "Create new child page" within "#main-menu"
-    When I click on "More functions"
+    When I click on "More"
     And I click on "Configure menu item"
     And I fill in "Wikikiki" for "menu_items_wiki_menu_item_name"
-    And I uncheck "Show submenu item 'Table of Contents'"
-    And I uncheck "Show submenu item 'Create new child page'"
     And I press "Save"
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
     Then I should see "Wikikiki" within "#main-menu"
-    Then I should not see "Table of Contents" within "#main-menu"
-    Then I should not see "Create new child page" within "#main-menu"
 
-    @javascript
+  @javascript
   Scenario: Do not change existing entry, but saving nonetheless
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
-    Then I should see "Table of Contents" within "#main-menu"
-    Then I should see "Create new child page" within "#main-menu"
-    When I click on "More functions"
+    When I click on "More"
     And I click on "Configure menu item"
     And I press "Save"
     Then I should not see "Successful update."
 
-    @javascript
+  @javascript
   Scenario: Adding a sub menu entry
     Given the project "Awesome Project" has a wiki menu item with the following:
       | title | SelectMe |
@@ -106,7 +94,7 @@ Feature: Wiki menu items
       | title | AwesomePage |
       | name | RichtigGeil |
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
-    When I click on "More functions"
+    When I click on "More"
     And I click on "Configure menu item"
     And I choose "Show as submenu item of"
     When I select "SelectMe" from "parent_wiki_menu_item"
@@ -115,26 +103,26 @@ Feature: Wiki menu items
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
     Then I should see "Wiki" within ".menu-children"
 
-    @javascript
+  @javascript @selenium
   Scenario: Removing a menu item
     Given the project "Awesome Project" has a wiki menu item with the following:
       | title | DontKillMe |
       | name | DontKillMe  |
     When I go to the wiki page "Wiki" for the project called "Awesome Project"
-    When I click on "More functions"
+    When I click on "More"
     And I click on "Configure menu item"
     And I choose "Do not show this wikipage in project navigation"
     And I press "Save"
     Then I should not see "Wiki" within "#main-menu"
 
-    @javascript
+  @javascript @selenium
   Scenario: When I delete the last wiki page with a menu item I can select a new menu item and the menu item is replaced
     Given the project "Awesome Project" has a wiki menu item with the following:
       | title | AwesomePage |
-      | name  | AwesomePage |
+      | name  | awesomepage |
     And the wiki menu item of the wiki page "Wiki" of project "Awesome Project" has been deleted
-    When I go to the wiki page "AwesomePage" for the project called "Awesome Project"
-    And I click on "More functions"
+    When I go to the wiki page "awesomepage" for the project called "Awesome Project"
+    And I click on "More"
     And I click on "Configure menu item"
     And I choose "Do not show this wikipage in project navigation"
     And I press "Save"

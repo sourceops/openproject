@@ -40,7 +40,7 @@ class WorkPackages::MovesController < ApplicationController
   def create
     prepare_for_work_package_move
 
-    new_type = params[:new_type_id].blank? ? nil : @target_project.types.find_by_id(params[:new_type_id])
+    new_type = params[:new_type_id].blank? ? nil : @target_project.types.find_by(id: params[:new_type_id])
     unsaved_work_package_ids = []
     moved_work_packages = []
     @work_packages.each do |work_package|
@@ -60,9 +60,10 @@ class WorkPackages::MovesController < ApplicationController
                                        :new_project_id,
                                        ids: [])
 
-      if r = work_package.move_to_project(@target_project, new_type,  copy: @copy,
-                                                                      attributes: permitted_params,
-                                                                      journal_note: @notes)
+      move_service = MoveWorkPackageService.new(work_package, current_user)
+      if r = move_service.call(@target_project, new_type, copy: @copy,
+                                                          attributes: permitted_params,
+                                                          journal_note: @notes)
         moved_work_packages << r
       else
         unsaved_work_package_ids << work_package.id
@@ -77,9 +78,9 @@ class WorkPackages::MovesController < ApplicationController
         redirect_to project_work_packages_path(@target_project || @project)
       end
     else
-      redirect_to project_work_packages_path(@project)
+      redirect_back_or_default(project_work_packages_path(@project))
     end
-      end
+  end
 
   def set_flash_from_bulk_work_package_save(work_packages, unsaved_work_package_ids)
     if unsaved_work_package_ids.empty? and not work_packages.empty?
@@ -98,10 +99,19 @@ class WorkPackages::MovesController < ApplicationController
 
   private
 
+  # Check if project is unique before bulk operations
+  def check_project_uniqueness
+    unless @project
+      # TODO: let users bulk move/copy work packages from different projects
+      render_error I18n.t('work_packages.move.unsupported_for_multiple_projects')
+      return false
+    end
+  end
+
   def prepare_for_work_package_move
-    @work_packages.sort!
+    @work_packages = @work_packages.sort
     @copy = params.has_key? :copy
-    @allowed_projects = WorkPackage.allowed_target_projects_on_move
+    @allowed_projects = WorkPackage.allowed_target_projects_on_move(current_user)
     @target_project = @allowed_projects.detect { |p| p.id.to_s == params[:new_project_id].to_s } if params[:new_project_id]
     @target_project ||= @project
     @types = @target_project.types

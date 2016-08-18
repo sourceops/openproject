@@ -43,6 +43,11 @@
       this.setupDropdownHoverAndClick();
       this.registerEventHandlers();
       this.closeOnBodyClick();
+      this.accessibility();
+    },
+
+    accessibility: function () {
+      $(".drop-down > ul").attr("aria-expanded","false");
     },
 
     toggleClick: function (dropdown) {
@@ -127,7 +132,7 @@
           self.toggleClick($(this));
           return false;
         });
-        $(it).hover(function () {
+        $(it).hover(function() {
           // only do something if the menu is in hover mode
           // AND the dropdown we hover on is not currently open anyways
           if (self.hover && self.isClosed($(this))) {
@@ -152,8 +157,8 @@
       dropdown.trigger("opened", dropdown);
     },
 
-    close: function (dropdown) {
-      this.slideUp(dropdown);
+    close: function (dropdown, immediate) {
+      this.slideUp(dropdown, immediate);
       dropdown.trigger("closed", dropdown);
     },
 
@@ -161,7 +166,7 @@
       var self = this;
       this.openDropdowns().each(function (ix, it) {
         if ($(it) != $(dropdown)) {
-          self.close($(it));
+          self.close($(it), true);
         }
       });
     },
@@ -183,13 +188,20 @@
     slideDown: function (dropdown) {
       var toDrop = dropdown.find("> ul");
       dropdown.addClass("open");
-      toDrop.slideDown(animationRate);
+      toDrop.slideDown(animationRate).attr("aria-expanded","true");
     },
 
-    slideUp: function (dropdown) {
+    slideUp: function (dropdown, immediate) {
       var toDrop = $(dropdown).find("> ul");
       dropdown.removeClass("open");
-      toDrop.slideUp(animationRate);
+
+      if (immediate) {
+        toDrop.hide();
+      } else {
+        toDrop.slideUp(animationRate);
+      }
+
+      toDrop.attr("aria-expanded","false");
     },
 
     // If there is ANY input, it will have precedence over links,
@@ -230,7 +242,7 @@
     var new_menu;
     $(this).each(function () {
       new_menu = new TopMenu($(this));
-      top_menus.each(function (menu) {
+      top_menus.forEach(function (menu) {
         menu.menu_container.on("openedMenu", function () {
           new_menu.closing();
         });

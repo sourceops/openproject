@@ -39,9 +39,9 @@ Feature: Localized boolean custom fields can be created
       | Feature |    2     |
       | Support |    3     |
     When I go to the custom fields page
-    When I follow "New custom field" within "#tab-content-WorkPackageCustomField"
+    When I follow "Create a new custom field" within "#tab-content-WorkPackageCustomField"
 
-  @javascript
+  @javascript @selenium
   Scenario: Available fields
     When I select "Boolean" from "custom_field_field_format"
     Then there should be the following localizations:

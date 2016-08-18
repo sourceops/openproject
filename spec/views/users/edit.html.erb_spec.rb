@@ -29,7 +29,7 @@
 require 'spec_helper'
 
 describe 'users/edit', type: :view do
-  let(:current_user) { FactoryGirl.build :admin }
+  let(:admin) { FactoryGirl.build :admin }
 
   context 'authentication provider' do
     let(:user)  {
@@ -41,20 +41,69 @@ describe 'users/edit', type: :view do
       assign(:user, user)
       assign(:auth_sources, [])
 
-      allow(view).to receive(:current_user).and_return(current_user)
+      allow(view).to receive(:current_user).and_return(admin)
     end
 
     it 'shows the authentication provider' do
       render
 
-      expect(response.body).to include('Test Provider')
+      expect(rendered).to include('Test Provider')
     end
 
     it 'does not show a no-login warning when password login is disabled' do
       allow(OpenProject::Configuration).to receive(:disable_password_login).and_return(true)
       render
 
-      expect(response.body).not_to include I18n.t('user.no_login')
+      expect(rendered).not_to include I18n.t('user.no_login')
+    end
+  end
+
+  context 'with an invited user' do
+    let(:user) { FactoryGirl.create :invited_user }
+
+    before do
+      assign(:user, user)
+      assign(:auth_sources, [])
+    end
+
+    context 'for an admin' do
+      before do
+        allow(view).to receive(:current_user).and_return(admin)
+        render
+      end
+
+      it 'renders the resend invitation button' do
+        expect(rendered).to include I18n.t(:label_resend_invitation)
+      end
+    end
+
+    context 'for a non-admin' do
+      let(:non_admin) { FactoryGirl.create :user }
+
+      before do
+        allow(view).to receive(:current_user).and_return(non_admin)
+        render
+      end
+
+      it 'does not render the resend invitation button' do
+        expect(rendered).not_to include I18n.t(:label_resend_invitation)
+      end
+    end
+  end
+
+  context 'with a normal (not invited) user' do
+    let(:user) { FactoryGirl.create :user }
+
+    before do
+      assign(:user, user)
+      assign(:auth_sources, [])
+
+      allow(view).to receive(:current_user).and_return(admin)
+      render
+    end
+
+    it 'does not render the resend invitation button' do
+      expect(rendered).not_to include I18n.t(:label_resend_invitation)
     end
   end
 
@@ -65,7 +114,7 @@ describe 'users/edit', type: :view do
       assign :user, user
       assign :auth_sources, []
 
-      allow(view).to receive(:current_user).and_return(current_user)
+      allow(view).to receive(:current_user).and_return(admin)
     end
 
     context 'with password login disabled' do
@@ -76,7 +125,7 @@ describe 'users/edit', type: :view do
       it 'warns that the user cannot login' do
         render
 
-        expect(response.body).to include I18n.t('user.no_login')
+        expect(rendered).to include I18n.t('user.no_login')
       end
 
       context 'with auth sources' do
@@ -129,21 +178,25 @@ describe 'users/edit', type: :view do
         it 'shows the password and password confirmation fields' do
           render
 
-          expect(rendered).to have_text('Password')
-          expect(rendered).to have_text('Confirmation')
+          within '#password_fields' do
+            expect(rendered).to have_text('Password')
+            expect(rendered).to have_text('Confirmation')
+          end
         end
       end
 
-      context 'with password choice enabled' do
+      context 'with password choice disabled' do
         before do
           expect(OpenProject::Configuration).to receive(:disable_password_choice?).and_return(true)
         end
 
-        it 'doesn not show the password and password confirmation fields' do
+        it "doesn't show the password and password confirmation fields" do
           render
 
-          expect(rendered).not_to have_text('Password')
-          expect(rendered).not_to have_text('Password confirmation')
+          within '#password_fields' do
+            expect(rendered).not_to have_text('Password')
+            expect(rendered).not_to have_text('Password confirmation')
+          end
         end
       end
     end

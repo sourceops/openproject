@@ -39,7 +39,7 @@ describe('sortingModal', function() {
     { name: 'cake', title: 'Cake', sortable: true }
   ];
 
-  beforeEach(module('openproject.workPackages.controllers',
+  beforeEach(angular.mock.module('openproject.workPackages.controllers',
                     'openproject.services',
                     'openproject.models'));
 
@@ -76,15 +76,11 @@ describe('sortingModal', function() {
       buildController();
     });
 
-    it('formats the columns for select2', function() {
-      var columnData = scope.availableColumnsData[1];
+    it('formats the columns for select', function() {
+      var columnData = scope.availableColumnsData[0];
 
       expect(columnData).to.have.property('id', 'parent');
       expect(columnData).to.have.property('label', 'Parent');
-    });
-
-    it('includes a blank option as the first option', function() {
-      expect(scope.availableColumnsData[0]).to.deep.equal({ id: null, label: ' ', other: null });
     });
   });
 

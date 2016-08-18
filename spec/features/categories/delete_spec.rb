@@ -36,7 +36,7 @@ describe 'Deletion', type: :feature do
   let(:delete_button) { 'div#tab-content-categories a.icon-delete' }
   let(:confirm_deletion_button) { 'input[type="submit"]' }
 
-  before { allow(User).to receive(:current).and_return current_user }
+  before do allow(User).to receive(:current).and_return current_user end
 
   shared_context 'delete category' do
     before do
@@ -49,7 +49,7 @@ describe 'Deletion', type: :feature do
   end
 
   shared_examples_for 'deleted category' do
-    it { expect(page).to have_selector('div#tab-content-categories p.nodata') }
+    it { expect(page).to have_selector('div.generic-table--no-results-container') }
 
     it { expect(page).to have_no_selector(delete_button) }
   end

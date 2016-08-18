@@ -32,11 +32,20 @@ describe Repository::Subversion, type: :model do
   let(:instance) { FactoryGirl.build(:repository_subversion) }
   let(:adapter)  { instance.scm }
   let(:config)   { {} }
+  let(:enabled_scm) { %w[subversion] }
 
   before do
-    allow(Setting).to receive(:enabled_scm).and_return(['Subversion'])
+    allow(Setting).to receive(:enabled_scm).and_return(enabled_scm)
     allow(instance).to receive(:scm).and_return(adapter)
-    allow(adapter).to receive(:config).and_return(config)
+    allow(instance.class).to receive(:scm_config).and_return(config)
+  end
+
+  describe 'when disabled' do
+    let(:enabled_scm) { [] }
+
+    it 'does not allow creating a repository' do
+      expect { instance.save! }.to raise_error ActiveRecord::RecordInvalid
+    end
   end
 
   describe 'default Subversion' do
@@ -45,7 +54,39 @@ describe Repository::Subversion, type: :model do
     end
 
     it 'has one available type' do
-      expect(instance.supported_types).to eq [:existing]
+      expect(instance.class.available_types).to eq [:existing]
+    end
+
+    context 'with disabled types' do
+      let(:config) { { disabled_types: [:existing, :managed] } }
+
+      it 'does not have any types' do
+        expect(instance.class.available_types).to be_empty
+      end
+    end
+
+    context 'with mixed disabled types' do
+      let(:config) { { disabled_types: ['existing', :managed] } }
+
+      it 'does not have any types' do
+        expect(instance.class.available_types).to be_empty
+      end
+    end
+
+    context 'with string disabled types' do
+      before do
+        allow(OpenProject::Configuration).to receive(:default_override_source)
+          .and_return('OPENPROJECT_SCM_SUBVERSION_DISABLED__TYPES' => '[managed,unknowntype]')
+
+        OpenProject::Configuration.load
+        allow(instance.class).to receive(:scm_config).and_call_original
+      end
+
+      it 'is no longer manageable' do
+        expect(instance.class.available_types).to eq([:existing])
+        expect(instance.class.disabled_types).to eq([:managed, :unknowntype])
+        expect(instance.manageable?).to be false
+      end
     end
   end
 
@@ -58,14 +99,19 @@ describe Repository::Subversion, type: :model do
     context 'with managed config' do
       let(:config) { { manages: managed_path } }
       let(:project) { FactoryGirl.build :project }
-      let(:identifier) { "#{project.identifier}.svn" }
 
       it 'is manageable' do
         expect(instance.manageable?).to be true
+        expect(instance.class.available_types).to eq([:existing, :managed])
       end
 
-      it 'has two available types' do
-        expect(instance.supported_types).to eq [:existing, :managed]
+      context 'with disabled managed typed' do
+        let(:config) { { disabled_types: [:managed] } }
+
+        it 'is no longer manageable' do
+          expect(instance.class.available_types).to eq([:existing])
+          expect(instance.manageable?).to be false
+        end
       end
 
       context 'and associated project' do
@@ -74,8 +120,7 @@ describe Repository::Subversion, type: :model do
         end
 
         it 'outputs valid managed paths' do
-          expect(instance.repository_identifier).to eq(identifier)
-          path = File.join(managed_path, identifier)
+          path = File.join(managed_path, project.identifier)
           expect(instance.managed_repository_path).to eq(path)
           expect(instance.managed_repository_url).to eq("file://#{path}")
         end
@@ -91,16 +136,28 @@ describe Repository::Subversion, type: :model do
 
         it 'outputs the correct hierarchy path' do
           expect(instance.managed_repository_path)
-            .to eq(File.join(managed_path, parent.identifier, identifier))
+            .to eq(File.join(managed_path, project.identifier))
         end
       end
+    end
+  end
+
+  describe 'with a remote repository' do
+    let(:instance) {
+      FactoryGirl.build(:repository_subversion,
+                        url: 'https://somewhere.example.org/svn/foo'
+                       )
+    }
+
+    it_behaves_like 'is not a countable repository' do
+      let(:repository) { instance }
     end
   end
 
   describe 'with an actual repository' do
     with_subversion_repository do |repo_dir|
       let(:url)      { "file://#{repo_dir}" }
-      let(:instance) { FactoryGirl.create(:repository_subversion, url: url) }
+      let(:instance) { FactoryGirl.create(:repository_subversion, url: url, root_url: url) }
 
       it 'should be available' do
         expect(instance.scm).to be_available
@@ -110,21 +167,21 @@ describe Repository::Subversion, type: :model do
         instance.fetch_changesets
         instance.reload
 
-        expect(instance.changesets.count).to eq(12)
-        expect(instance.changes.count).to eq(21)
-        expect(instance.changesets.find_by_revision('1').comments).to eq('Initial import.')
+        expect(instance.changesets.count).to eq(13)
+        expect(instance.file_changes.count).to eq(25)
+        expect(instance.changesets.find_by(revision: '1').comments).to eq('Initial import.')
       end
 
       it 'should fetch changesets incremental' do
         instance.fetch_changesets
 
         # Remove changesets with revision > 5
-        instance.changesets.find(:all).each do |c| c.destroy if c.revision.to_i > 5 end
+        instance.changesets.each do |c| c.destroy if c.revision.to_i > 5 end
         instance.reload
         expect(instance.changesets.count).to eq(5)
 
         instance.fetch_changesets
-        expect(instance.changesets.count).to eq(12)
+        expect(instance.changesets.count).to eq(13)
       end
 
       it 'should latest changesets' do
@@ -162,7 +219,7 @@ describe Repository::Subversion, type: :model do
           instance.reload
 
           expect(instance.changesets.count).to eq(1)
-          expect(instance.changes.count).to eq(2)
+          expect(instance.file_changes.count).to eq(2)
 
           entries = instance.entries('')
           expect(entries).to_not be_nil
@@ -174,7 +231,7 @@ describe Repository::Subversion, type: :model do
       it 'should show the identifier' do
         instance.fetch_changesets
         instance.reload
-        c = instance.changesets.find_by_revision('1')
+        c = instance.changesets.find_by(revision: '1')
         expect(c.revision).to eq(c.identifier)
       end
 
@@ -195,7 +252,7 @@ describe Repository::Subversion, type: :model do
       it 'should format identifier' do
         instance.fetch_changesets
         instance.reload
-        c = instance.changesets.find_by_revision('1')
+        c = instance.changesets.find_by(revision: '1')
         expect(c.format_identifier).to eq(c.revision)
       end
 
@@ -205,8 +262,9 @@ describe Repository::Subversion, type: :model do
         expect(c.format_identifier).to eq(c.revision)
       end
 
-      it 'should log encoding ignore setting' do
-        with_settings commit_logs_encoding: 'windows-1252' do
+      context 'with windows-1252 encoding',
+              with_settings: { commit_logs_encoding: %w(windows-1252) } do
+        it 'should log encoding ignore setting' do
           s1 = "\xC2\x80"
           s2 = "\xc3\x82\xc2\x80"
           if s1.respond_to?(:force_encoding)
@@ -238,7 +296,7 @@ describe Repository::Subversion, type: :model do
         changeset = instance.find_changeset_by_name('1')
         expect(changeset.previous).to be_nil
 
-        changeset = instance.find_changeset_by_name('12')
+        changeset = instance.find_changeset_by_name('13')
         expect(changeset.next).to be_nil
       end
 
@@ -268,6 +326,12 @@ describe Repository::Subversion, type: :model do
           expect(event.event_path).to match(/\?rev=123456789$/)
         end
       end
+
+      it_behaves_like 'is a countable repository' do
+        let(:repository) { instance }
+      end
     end
   end
+
+  it_behaves_like 'repository can be relocated', :subversion
 end

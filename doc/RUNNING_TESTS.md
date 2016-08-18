@@ -52,40 +52,6 @@ for more options, such as another browser, invoke the karma executable directly:
     ./node_modules/karma/bin/karma start
     ./node_modules/karma/bin/karma start --browsers Chrome,Firefox
 
-### Running end-to-end tests with Protractor
-
-If you want to run all tests with Protractor, you can use `npm run`:
-
-    npm run protractor
-
-This is a wrapper around a [Gulp][gulp] task. You can also:
-
-    gulp tests:protractor
-
-The task takes care of:
-
-  * bundling assets using Webpack.
-  * running an [Express][express] server that serves the frontend application,
-    in addition to mock API endpoints.
-  * running a Selenium Webdriver server.
-
-If you want to follow these steps manually for any reason:
-
-1. Ensure you have the the latest Selenium WebDriver:
-
-        npm install -g protractor
-        webdriver-manager update
-
-2. You can start the frontend application
-
-        gulp express
-
-3. You can then proceed to start both the Selenium server and Protractor:
-
-        webdriver-manager start
-        ./node_modules/protractor/bin/protractor protractor/conf.js
-
-
 ## Rails backend and integration tests
 
 ### RSpec
@@ -98,7 +64,12 @@ You can run the specs with the following commands:
 * `bundle exec rake spec:all` Run core and plugin specs with a random seed
 * `SPEC_OPTS="--seed 12935" bundle exec rake spec` Run the core specs with the seed 12935
 
-### Cucumber [DEPRECATED]
+### Cucumber
+
+**Note:** *We do not write new cucumber features. The current plan is to move away from
+cucumber towards regular specs using Capybara. For the time being however, please keep the existing
+cucumber features green or write your feature specs in Capybara for any  code that is not already
+covered by cucumber.*
 
 The cucumber features can be run using rake. You can run the following
 rake tasks using the command `bundle exec rake <task>`.
@@ -119,6 +90,31 @@ allows specifying custom options to cucumber. This can be used for
 executing scenarios by name, e.g. `"cucumber:all[-n 'Adding an issue link']"`.
 Like with spaces in `cucumber:custom` arguments, task name and arguments
 have to be enclosed in quotation marks.
+
+#### Running cucumber features without rake
+
+Running cucumber features without going through `rake` is possible by using
+the following command
+
+`cucumber -r features features/my/path/to/cucumber.feature`
+
+It is also possible to run a certain cuke by passing a line number:
+
+`cucumber -r features features/my/path/to/cucumber.feature:123`
+
+You may also run cukes within a certain folder:
+
+`cucumber -r features features/my/path`
+
+**Note: `-r features` is required otherwise the step definitions cannot be found.**
+
+You can run cucumber without rake, and with all core and plugin features included
+through:
+
+```
+./bin/cucumber features/my/path/to/cucumber.feature:123
+```
+
 
 #### Shortcuts
 
@@ -151,6 +147,73 @@ You can always start a debugger using the step "And I start debugging".
 If you need Firebug and Firepath while debugging a scenario, just replace
 @javascript with @firebug.
 
+### Parallel testing
+
+Running tests in parallel makes usage of all available cores of the machine.
+Functionality is being provided by [parallel_tests](https://github.com/grosser/parallel_tests) gem.
+See the github page for any options like number of cpus used.
+
+#### Prepare
+
+Adjust `database.yml` to use different databases:
+
+```yml
+test: &test
+  database: openproject_test<%= ENV['TEST_ENV_NUMBER'] %>
+  # ...
+```
+
+Create all databases: `rake parallel:create`
+
+Prepare all databases:
+
+`RAILS_ENV=test parallel_test -e "rake db:drop db:create db:migrate"`
+
+**Note: Until `rake db:schema:load` works we have to use the command above. Then we
+can use `rake parallel:prepare`**
+
+You may also just dump your current schema with `rake db:schema:dump` (db/schema.rb)
+is not part of the repository. Then you can just use `rake parallel:prepare` to prepare
+test databases.
+
+#### RSpec legacy specs
+
+Run all legacy specs in parallel with `rake parallel:spec_legacy`
+
+Or run them manually with `parallel_test -t rspec -o '-I spec_legacy' spec_legacy`
+
+#### RSpec specs
+
+Run all specs in parallel with `rake parallel:spec`
+
+Or run them manually with `parallel_test -t rspec spec`.
+
+#### Cucumber
+
+Run all cucumber features in parallel with `rake parallel:cucumber`.
+
+Or run them manually with `parallel_test -t cucumber -o '-r features' features`.
+
+**Note:** there is also a official rake task to run cucumber features but the OpenProject cucumber
+test suite requires `-r features` to run correctly. This needs to be passed to the command
+thus it looks not very handy `rake parallel:features\[,,"-r features"\]`
+(this is zsh compatible, command takes three arguments but we just want to pass the last one here.)
+
+#### Plugins
+
+Run specs for all activated plugins with `rake parallel:plugins:spec`.
+
+Run cucumber features for all activated plugins with `rake parallel:plugins:cucumber`.
+
+#### Full test suite
+
+You may run all existing parts of OpenProject test suite in parallel with
+`rake parallel:all`
+
+**Note:** This will run core specs, core cucumber features, core legacy specs,
+plugin specs and plugin cucumber features. This task will take around 40 minutes
+on a machine with 8 parallel instances.
+
 ## For the fancy programmer
 
 * We are testing on travis-ci. Look there for your pull requests.<br />
@@ -162,6 +225,3 @@ If you need Firebug and Firepath while debugging a scenario, just replace
 
 * Sometimes you want to test things manually. Always remember: If you test something more than once, write an automated test for it.
 * Assuming you do not have a version of Internet Explorer already installed on your computer, you can grab a VM with preinstalled IE's directly from Microsoft: http://www.modern.ie/en-us/virtualization-tools#downloads
-
-[gulp]:http://gulpjs.com/
-[express]:http://expressjs.com/

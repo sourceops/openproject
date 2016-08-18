@@ -48,13 +48,24 @@ module.exports = function(FocusHelper) {
       if (isSelect2Element(attrs)) {
         FocusHelper.focusSelect2Element(element);
       } else {
-        FocusHelper.focusElement(element);
+        var prio = 0;
+        if (attrs.focusPriority) {
+          prio = scope.$eval(attrs.focusPriority);
+          // Special case: Treat 'true' as 1 for convenience
+          if (prio === true) {
+            prio = 1;
+          } else {
+            prio = Number.parseInt(prio);
+          }
+        }
+        FocusHelper.focusElement(element, prio);
       }
     }
   }
 
   return {
     link: function(scope, element, attrs) {
+
       updateFocus(scope, element, attrs);
 
       scope.$on('updateFocus', function() {

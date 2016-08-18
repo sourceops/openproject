@@ -40,13 +40,11 @@ class Timeline < ActiveRecord::Base
     end
   end
 
-  unloadable
-
   serialize :options
 
   self.table_name = 'timelines'
 
-  default_scope order: 'name ASC'
+  default_scope { order('name ASC') }
 
   belongs_to :project, class_name: 'Project'
 
@@ -54,8 +52,6 @@ class Timeline < ActiveRecord::Base
   validates_length_of :name, maximum: 255, unless: lambda { |e| e.name.blank? }
   validate :validate_option_dates
   validate :validate_option_numeric
-
-  attr_accessible :name, :options
 
   before_save :remove_empty_options_values
   before_save :split_joined_options_values
@@ -76,9 +72,6 @@ class Timeline < ActiveRecord::Base
     'grouping_one_enabled',
     'grouping_one_selection',
     'grouping_one_sort',
-    'grouping_two_enabled',
-    'grouping_two_selection',
-    'grouping_two_sort',
     'hide_chart',
     'hide_other_group',
     'initial_outline_expansion',
@@ -219,7 +212,7 @@ class Timeline < ActiveRecord::Base
     # that are reporting into the project that this timeline is
     # referencing.
 
-    Type.find(:all, order: :name)
+    ::Type.order(:name)
   end
 
   def available_planning_element_status
@@ -229,19 +222,19 @@ class Timeline < ActiveRecord::Base
 
   def selected_planning_element_status
     resolve_with_none_element(:planning_element_status) do |ary|
-      Status.find_all_by_id(ary)
+      Status.where(id: ary)
     end
   end
 
   def selected_planning_element_types
     resolve_with_none_element(:planning_element_types) do |ary|
-      Type.find_all_by_id(ary)
+      ::Type.where(id: ary)
     end
   end
 
   def selected_planning_element_time_types
     resolve_with_none_element(:planning_element_time_types) do |ary|
-      Type.find_all_by_id(ary)
+      ::Type.where(id: ary)
     end
   end
 
@@ -251,33 +244,33 @@ class Timeline < ActiveRecord::Base
 
   def selected_project_types
     resolve_with_none_element(:project_types) do |ary|
-      ProjectType.find_all_by_id(ary)
+      ProjectType.where(id: ary)
     end
   end
 
   def available_project_status
-    ReportedProjectStatus.find(:all, order: :name)
+    ReportedProjectStatus.order(:name)
   end
 
   def selected_project_status
     resolve_with_none_element(:project_status) do |ary|
-      ReportedProjectStatus.find_all_by_id(ary)
+      ReportedProjectStatus.where(id: ary)
     end
   end
 
   def available_responsibles
-    User.find(:all).sort_by(&:name)
+    User.all.sort_by(&:name)
   end
 
   def selected_project_responsibles
     resolve_with_none_element(:project_responsibles) do |ary|
-      User.find_all_by_id(ary)
+      User.where(id: ary)
     end
   end
 
   def selected_planning_element_responsibles
     resolve_with_none_element(:planning_element_responsibles) do |ary|
-      User.find_all_by_id(ary)
+      User.where(id: ary)
     end
   end
 
@@ -295,7 +288,7 @@ class Timeline < ActiveRecord::Base
   end
 
   def get_custom_fields
-    project.all_work_package_custom_fields
+    project.all_work_package_custom_fields.sort_by{ |n| n[:name].downcase }
   end
 
   def selected_planning_element_assignee
@@ -310,13 +303,15 @@ class Timeline < ActiveRecord::Base
 
   def selected_parents
     resolve_with_none_element(:parents) do |ary|
-      Project.find_all_by_id(ary)
+      Project.where(id: ary)
     end
   end
 
   def selected_columns
     if options['columns'].present?
-      options['columns']
+      available = available_columns + custom_field_column_ids
+
+      options['columns'] & available
     else
       []
     end
@@ -340,7 +335,7 @@ class Timeline < ActiveRecord::Base
 
   def selected_grouping_projects
     resolve_with_none_element(:grouping_one_selection) do |ary|
-      projects = Project.find_all_by_id(ary)
+      projects = Project.where(id: ary)
       projectsHashMap = Hash[projects.map { |v| [v.id, v] }]
 
       ary.map { |a| projectsHashMap[a] }
@@ -353,12 +348,6 @@ class Timeline < ActiveRecord::Base
 
   def selectable_projects
     Project.selectable_projects
-  end
-
-  def selected_grouping_project_types
-    resolve_with_none_element(:grouping_two_selection) do |ary|
-      ProjectType.find_all_by_id(ary)
-    end
   end
 
   def available_grouping_project_types
@@ -436,5 +425,9 @@ class Timeline < ActiveRecord::Base
     yield
   ensure
     ActiveSupport.escape_html_entities_in_json = oldvalue
+  end
+
+  def custom_field_column_ids
+    custom_field_columns.map { |cf| cf[:id] }
   end
 end

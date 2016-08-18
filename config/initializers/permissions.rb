@@ -45,7 +45,7 @@ Redmine::AccessControl.map do |map|
                  require: :loggedin
 
   map.permission :edit_project,
-                 { projects: [:settings, :edit, :update],
+                 { projects: [:settings, :edit, :update, :custom_fields],
                    members: [:paginate_users] },
                  require: :member
 
@@ -54,8 +54,11 @@ Redmine::AccessControl.map do |map|
                  require: :member
 
   map.permission :manage_members,
-                 { projects: :settings,
-                   members: [:create, :update, :destroy, :autocomplete_for_member] },
+                 { members: [:index, :new, :create, :update, :destroy, :autocomplete_for_member] },
+                 require: :member
+
+  map.permission :view_members,
+                 { members: [:index] },
                  require: :member
 
   map.permission :manage_versions,
@@ -108,14 +111,14 @@ Redmine::AccessControl.map do |map|
                                                          :column_data,
                                                          :column_sums],
                    # This is api/v2/planning_element_types
-                   :'planning_element_types' => [:index,
-                                                 :show]
+                   planning_element_types: [:index,
+                                               :show]
 
     wpt.permission :export_work_packages,
                    work_packages: [:index, :all]
 
     wpt.permission :add_work_packages,
-                   issues: [:new, :create, :update_form],
+                   issues: [:new, :create],
                    :'issues/previews' => :create,
                    work_packages: [:new, :new_type, :preview, :create]
 
@@ -124,7 +127,7 @@ Redmine::AccessControl.map do |map|
                    require: :loggedin
 
     wpt.permission :edit_work_packages,
-                   { issues: [:edit, :update, :update_form],
+                   { issues: [:edit, :update],
                      :'work_packages/bulk' => [:edit, :update],
                      work_packages: [:edit, :update, :new_type,
                                      :preview, :quoted],
@@ -170,17 +173,17 @@ Redmine::AccessControl.map do |map|
 
     wpt.permission :save_queries,
                    { :'api/experimental/queries' => [:create, :update, :destroy],
-                     :'queries' => [:star, :unstar] },
+                     queries: [:star, :unstar] },
                    require: :loggedin
     # Watchers
     wpt.permission :view_work_package_watchers,
                    {}
 
     wpt.permission :add_work_package_watchers,
-                   watchers: [:new, :create]
+                   {}
 
     wpt.permission :delete_work_package_watchers,
-                   watchers: :destroy
+                   {}
   end
 
   map.project_module :time_tracking do |time|
@@ -203,7 +206,6 @@ Redmine::AccessControl.map do |map|
     time.permission :manage_project_activities,
                     { project_enumerations: [:update, :destroy] },
                     require: :member
-
   end
 
   map.project_module :news do |news|
@@ -221,7 +223,6 @@ Redmine::AccessControl.map do |map|
   end
 
   map.project_module :wiki do |wiki|
-
     wiki.permission :manage_wiki,
                     { wikis: [:edit, :destroy] },
                     require: :member
@@ -269,20 +270,21 @@ Redmine::AccessControl.map do |map|
   end
 
   map.project_module :repository do |repo|
+    repo.permission :browse_repository,
+                    repositories: [:show, :browse, :entry, :annotate,
+                                   :changes, :diff, :stats, :graph]
+
+    repo.permission :commit_access,
+                    {}
+
     repo.permission :manage_repository,
                     { repositories: [:edit, :create, :update, :committers,
                                      :destroy_info, :destroy] },
                     require: :member
 
-    repo.permission :browse_repository,
-                    repositories: [:show, :browse, :entry, :annotate,
-                                   :changes, :diff, :stats, :graph]
-
     repo.permission :view_changesets,
                     repositories: [:show, :revisions, :revision]
 
-    repo.permission :commit_access,
-                    {}
 
     repo.permission :view_commit_author_statistics,
                     {}

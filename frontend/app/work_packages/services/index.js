@@ -27,20 +27,24 @@
 //++
 
 angular.module('openproject.workPackages.services')
-  .service('WorkPackagesTableService', [
-    '$filter',
-    'QueryService',
-    'WorkPackagesTableHelper',
-    require('./work-packages-table-service')
-  ])
   .constant('WORK_PACKAGE_ATTRIBUTES', [
     {
       groupName: 'details',
-      attributes: ['type', 'status', 'percentageDone', 'date', 'priority', 'version', 'category']
+      attributes: [
+        'project',
+        'type',
+        'status',
+        'percentageDone',
+        { label: 'date',
+          fields: ['startDate', 'dueDate'] },
+        'date',
+        'priority',
+        'version',
+        'category']
     },
     {
       groupName: 'people',
-      attributes: ['assignee', 'responsible']
+      attributes: ['author', 'assignee', 'responsible']
     },
     {
       groupName: 'estimatesAndTime',
@@ -51,33 +55,11 @@ angular.module('openproject.workPackages.services')
       attributes: []
     }
   ])
-  .constant('WORK_PACKAGE_REGULAR_EDITABLE_FIELD', [
-    'assignee', 'responsible', 'status', 'version', 'priority'
+  .factory('WorkPackageFieldConfigurationService', [
+    'VersionService',
+    require('./work-package-field-configuration-service')
   ])
   .service('WorkPackagesOverviewService', [
     'WORK_PACKAGE_ATTRIBUTES',
     require('./work-packages-overview-service')
-  ])
-  .service('WorkPackageFieldService', [
-    'I18n',
-    'WORK_PACKAGE_REGULAR_EDITABLE_FIELD',
-    'WorkPackagesHelper',
-    '$q',
-    '$http',
-    'HookService',
-    'EditableFieldsState',
-    require('./work-package-field-service')
-  ])
-  .service('EditableFieldsState',
-    require('./editable-fields-state')
-  )
-  .service('WorkPackageAttachmentsService', [
-    'Upload', // 'Upload' is provided by ngFileUpload
-    'PathHelper',
-    'I18n',
-    'NotificationsService',
-    '$q',
-    '$timeout',
-    '$http',
-    require('./work-package-attachments-service')
   ]);

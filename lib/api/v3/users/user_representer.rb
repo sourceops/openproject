@@ -36,7 +36,22 @@ module API
       class UserRepresenter < ::API::Decorators::Single
         include AvatarHelper
 
+        def self.create(user, current_user:)
+          new(user, current_user: current_user)
+        end
+
+        def initialize(user, current_user:)
+          super(user, current_user: current_user)
+        end
+
         self_link
+
+        link :showUser do
+          {
+            href: api_v3_paths.show_user(represented.id),
+            type: 'text/html'
+          }
+        end
 
         link :lock do
           {
@@ -60,15 +75,6 @@ module API
             title: "Delete #{represented.login}",
             method: :delete
           } if current_user_can_delete_represented?
-        end
-
-        link :removeWatcher do
-          {
-            href: api_v3_paths.watcher(represented.id, work_package.id),
-            method: :delete,
-            title: 'Remove watcher'
-          } if work_package && current_user_allowed_to(:delete_work_package_watchers,
-                                                       context: work_package.project)
         end
 
         property :id,
@@ -112,13 +118,13 @@ module API
         end
 
         def current_user_is_admin
-          current_user && current_user.admin?
+          current_user.admin?
         end
 
         private
 
         def work_package
-          context[:work_package]
+          @work_package
         end
 
         def current_user_can_delete_represented?

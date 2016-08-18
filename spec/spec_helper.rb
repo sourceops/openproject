@@ -27,7 +27,11 @@
 #++
 
 require 'rubygems'
-require 'simplecov'
+
+if ENV['COVERAGE']
+  require 'simplecov'
+  SimpleCov.start 'rails'
+end
 
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 ENV['RAILS_ENV'] ||= 'test'
@@ -38,13 +42,8 @@ require 'shoulda/matchers'
 require 'rspec/example_disabler'
 require 'capybara/rails'
 require 'capybara-screenshot/rspec'
-
-Capybara.register_driver :selenium do |app|
-  require 'selenium/webdriver'
-  Selenium::WebDriver::Firefox::Binary.path = ENV['FIREFOX_BINARY_PATH'] ||
-    Selenium::WebDriver::Firefox::Binary.path
-  Capybara::Selenium::Driver.new(app, browser: :firefox)
-end
+require 'factory_girl_rails'
+require 'webmock/rspec'
 
 # Requires supporting ruby files with custom matchers and macros, etc,
 # in spec/support/ and its subdirectories.
@@ -62,6 +61,10 @@ RSpec.configure do |config|
   # config.mock_with :flexmock
   # config.mock_with :rr
   config.mock_with :rspec
+
+  unless ENV['TEST_ENV_NUMBER'] || ENV['CI']
+    config.formatter = Fuubar
+  end
 
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_path = "#{::Rails.root}/spec/fixtures"
@@ -82,19 +85,33 @@ RSpec.configure do |config|
   config.before(:each) do |example|
     DatabaseCleaner.strategy = if example.metadata[:js]
                                  # JS => doesn't share connections => can't use transactions
-                                 # truncations seem to fail more often + they are slower
-                                 :deletion
+                                 # as of database_cleaner 1.4 'deletion' causes error:
+                                 # 'column "table_rows" does not exist'
+                                 # https://github.com/DatabaseCleaner/database_cleaner/issues/345
+                                 :truncation
                                else
                                  # No JS/Devise => run with Rack::Test => transactions are ok
                                  :transaction
                                end
 
     DatabaseCleaner.start
+    ActionMailer::Base.deliveries.clear
   end
 
   config.after(:each) do
     DatabaseCleaner.clean
   end
+
+  # As we're using WebMock to mock and test remote HTTP requests,
+  # we require specs to selectively enable mocking of Net::HTTP et al. when the example desires.
+  # Otherwise, all requests are being mocked by default.
+  WebMock.disable!
+
+  # When we enable webmock, no connections other than stubbed ones are allowed.
+  # We will exempt local connections from this block, since selenium etc.
+  # uses localhost to communicate with the browser.
+  # Leaving this off will randomly fail some specs with WebMock::NetConnectNotAllowedError
+  WebMock.disable_net_connect!(allow_localhost: true)
 
   # If true, the base class of anonymous controllers will be inferred
   # automatically. This will be the default behavior in future versions of
@@ -114,15 +131,18 @@ RSpec.configure do |config|
 
   config.include ::Angular::DSL
 
-  Capybara.default_wait_time = 4
+  Capybara.default_max_wait_time = 4
 
   config.after(:each) do
     OpenProject::RspecCleanup.cleanup
   end
 
   config.after(:suite) do
-    [User, Project, WorkPackage].each do |cls|
-      raise "your specs leave a #{cls} in the DB\ndid you use before(:all) instead of before or forget to kill the instances in a after(:all)?" if cls.count > 0
+    # We don't want this to be reported on CI as it breaks the build
+    unless ENV['CI']
+      [User, Project, WorkPackage].each do |cls|
+        raise "your specs left a #{cls} in the DB\ndid you use before(:all) instead of before or forget to kill the instances in a after(:all)?" if cls.count > 0
+      end
     end
   end
 
@@ -132,15 +152,32 @@ RSpec.configure do |config|
 
   # include spec/api for API request specs
   config.include RSpec::Rails::RequestExampleGroup, type: :request
+
+  # colorized rspec output
+  config.color = true
 end
 
-# load disable_specs.rbs from plugins
+# Loads two files automatically from plugins:
+#
+# 1. `spec/disable_specs.rbs` to disable specs which don't work in conjunction with the
+# respective plugin.
+# 2. The config spec helper in `spec/config_spec_helper` makes sure that the core specs
+# (and other plugins' specs) keep working with this plugin in an OpenProject configuration
+# even if it changes things which would otherwise break existing specs.
 Rails.application.config.plugins_to_test_paths.each do |dir|
-  disable_specs_file = File.join(dir, 'spec', 'disable_specs.rb')
-  if File.exists?(disable_specs_file)
-    puts 'Loading ' + disable_specs_file
-    require disable_specs_file
+  ['disabled_specs.rb', 'disable_specs.rb', 'config_spec_helper.rb'].each do |file_name|
+    file = File.join(dir, 'spec', file_name)
+
+    if File.exists?(file)
+      puts "Loading #{file}"
+      require file
+    end
   end
+end
+
+require 'rack_session_access/capybara'
+Rails.application.config do
+  config.middleware.use RackSessionAccess::Middleware
 end
 
 module OpenProject::RspecCleanup

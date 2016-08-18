@@ -37,7 +37,8 @@ div.wiki
     border: 0
     font-size: $wiki-max-heading-font-size
     line-height: 1.4
-    height: 45px
+    margin-bottom: 16px
+
   h2
     font-size: $wiki-max-heading-font-size * 0.8
   h3
@@ -68,11 +69,8 @@ div.wiki
     border: 1px solid #bbb
     padding: 4px
 
-  .external
-    background-position: 0% 60%
-    background-repeat: no-repeat
-    padding-left: 12px
-    background-image: image-url('external.png')
+  .external.icon-context:before
+    padding: 4px 4px 0 0
 
   pre
     margin: 1em 1em 1em 1.6em
@@ -101,10 +99,10 @@ div.wiki
       width: auto
     a
       font-weight: normal
-      background-image: image-url('arrow-down.png')
       background-repeat: no-repeat
       background-position: 0% 60%
-      padding-left: 16px
+      &.icon-context:before
+        padding: 3px 3px 0 0
     li
       list-style-type: none
 
@@ -118,9 +116,11 @@ div.wiki
 
   ol li
     list-style-type: decimal
+    list-style-position: inherit
 
   ul li
     list-style-type: disc
+    list-style-position: inherit
 
   li li
     margin-left: 1.5em
@@ -134,6 +134,7 @@ a.wiki-anchor
   display: none
   margin-left: 6px
   text-decoration: none
+
   &:hover
     color: #aaa !important
     text-decoration: none
@@ -154,62 +155,50 @@ h1:hover, h2:hover, h3:hover
       padding: 4px 4px 4px 48px
       min-height: 33px
 
-    &.smallsee-also, &.smallcaution, &.smallimportant, &.smallinfo, &.smalltip, &.smallnote
-      display: block
-      margin-top: .5em
-      margin-bottom: .5em
-      padding: 4px 4px 4px 34px
-      min-height: 24px
-
-    &.see-also
-      background: image-url('wiki_styles/see-also.png') 4px 4px no-repeat #f5fffa
-      border: 1px solid #AAB1AD
-
-    &.smallsee-also
-      background: image-url('wiki_styles/see-also_small.png') 4px 4px no-repeat #f5fffa
-      border: 1px solid #AAB1AD
-
-    &.caution
-      background: image-url('wiki_styles/caution.png') 4px 6px no-repeat #f5fffa
-      border: 1px solid #AAB1AD
-
-    &.smallcaution
-      background: image-url('wiki_styles/caution_small.png') 4px 4px no-repeat #f5fffa
-      border: 1px solid #AAB1AD
-
-    &.important
-      background: image-url('wiki_styles/important.png') 4px 7px no-repeat #F0F8FF
-      border: 1px solid #C1C8CF
-
-    &.smallimportant
-      background: image-url('wiki_styles/important_small.png') 4px 6px no-repeat #F0F8FF
-      border: 1px solid #C1C8CF
-
-    &.info
-      background: image-url('wiki_styles/info.png') 4px 4px no-repeat #FFFFE0
-      border: 1px solid #FFFF00
-
-    &.smallinfo
-      background: image-url('wiki_styles/info_small.png') 4px 4px no-repeat #FFFFE0
-      border: 1px solid #FFFF00
-
-    &.smalltip
-      background: image-url('wiki_styles/tip_small.png') 4px 5px no-repeat #F5FFFA
-      border: 1px solid #C7CFCA
-
-    &.note
-      background: image-url('wiki_styles/note.png') 6px 4px no-repeat #F5FFFA
-      border: 1px solid #C7CFCA
-
-    &.smallnote
-      background: image-url('wiki_styles/note_small.png') 5px 4px no-repeat #F5FFFA
-      border: 1px solid #C7CFCA
-
   .quick_info .label
     background: none
     color: #000
     font-weight: bold
     font-size: $wiki-default-font-size
 
-.wiki-content
-  width: 700px
+  .wiki-title
+    max-width: 100%
+    overflow: hidden
+    text-overflow: ellipsis
+
+#wiki_form .attributes-group
+  .attributes-group--header-text
+    color: lighten($body-font-color, 10)
+  .form--label
+    display: none
+
+  .form--field-container
+    max-width: 100%
+
+    .form--text-area-container
+      margin-top: -46px
+
+      .jstElements
+        margin-bottom: 18px
+        position: relative
+        top: -5px
+
+#wiki_page_parent_id
+  overflow: auto
+
+blockquote
+  font-style: italic
+  &.icon:before
+    color: #e0e0e0
+    position: relative
+    bottom: 10px
+    right: 15px
+    padding: 0 0 0 0
+
+.toolbar-container ~ .wiki-content
+  margin-top: -64px
+
+@include breakpoint(680px down)
+  .toolbar-container ~ .wiki-content
+    margin-top: 0
+

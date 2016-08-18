@@ -1,0 +1,10 @@
+<div class="wp-create-button">
+  <button class="button -alt-highlight add-work-package"
+          ng-click="$ctrl.createWorkPackage()"
+          ng-disabled="$ctrl.isDisabled()"
+          aria-label="{{ ::$ctrl.text.create }}">
+
+    <i class="button--icon icon-add"></i>
+    <span class="button--text" ng-bind="::$ctrl.text.button" aria-hidden="true"></span>
+  </button>
+</div>

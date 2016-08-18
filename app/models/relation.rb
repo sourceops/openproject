@@ -59,8 +59,6 @@ class Relation < ActiveRecord::Base
 
   before_save :update_schedule
 
-  attr_protected :from_id, :to_id
-
   def validate_sanity_of_relation
     if from && to
       errors.add :to_id, :invalid if from_id == to_id
@@ -98,6 +96,10 @@ class Relation < ActiveRecord::Base
       self.delay = nil
     end
     set_dates_of_target
+  end
+
+  def move_target_dates_by(delta)
+    to.reschedule_by(delta) if relation_type == TYPE_PRECEDES
   end
 
   def set_dates_of_target

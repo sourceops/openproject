@@ -32,7 +32,7 @@ class WorkPackageCustomField < CustomField
   has_and_belongs_to_many :types, join_table: "#{table_name_prefix}custom_fields_types#{table_name_suffix}", foreign_key: 'custom_field_id'
   has_many :work_packages, through: :work_package_custom_values
 
-  scope :visible_by_user, lambda { |user|
+  scope :visible_by_user, -> (user) {
     unless user.admin?
       joins('LEFT OUTER JOIN custom_fields_projects AS cfp ON (custom_fields.id = cfp.custom_field_id) ' \
             'LEFT OUTER JOIN projects AS p ON (cfp.project_id = p.id) ' \
@@ -42,6 +42,16 @@ class WorkPackageCustomField < CustomField
              'OR m.user_id = ?', user.id)
     end
   }
+
+  def self.summable
+    ids = Setting.work_package_list_summable_columns.map { |column_name|
+      if match = /cf_(\d+)/.match(column_name)
+        match[1]
+      end
+    }.compact
+
+    where(id: ids)
+  end
 
   def type_name
     # TODO

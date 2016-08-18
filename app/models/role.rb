@@ -28,17 +28,19 @@
 #++
 
 class Role < ActiveRecord::Base
-  include ActiveModel::ForbiddenAttributesProtection
   extend Pagination::Model
 
   # Built-in roles
   BUILTIN_NON_MEMBER = 1
   BUILTIN_ANONYMOUS  = 2
 
-  scope :givable,  conditions: 'builtin = 0', order: 'position'
-  scope :builtin, lambda { |*args|
+  scope :givable, -> {
+    where('builtin = 0')
+      .order('position')
+  }
+  scope :builtin, -> (*args) {
     compare = 'not' if args.first == true
-    { conditions: "#{compare} builtin = 0" }
+    where("#{compare} builtin = 0")
   }
 
   before_destroy :check_deletable
@@ -53,7 +55,6 @@ class Role < ActiveRecord::Base
   acts_as_list
 
   serialize :permissions, Array
-  attr_protected :builtin
 
   validates_presence_of :name
   validates_uniqueness_of :name
@@ -82,7 +83,7 @@ class Role < ActiveRecord::Base
   def remove_permission!(*perms)
     return unless permissions.is_a?(Array)
     permissions_will_change!
-    perms.each { |p| permissions.delete(p.to_sym) }
+    perms.each do |p| permissions.delete(p.to_sym) end
     save!
   end
 
@@ -111,7 +112,7 @@ class Role < ActiveRecord::Base
 
   # Return true if role is allowed to do the specified action
   # action can be:
-  # * a parameter-like Hash (eg. :controller => '/projects', :action => 'edit')
+  # * a parameter-like Hash (eg. controller: '/projects', action: 'edit')
   # * a permission Symbol (eg. :edit_project)
   def allowed_to?(action)
     if action.is_a? Hash
@@ -131,13 +132,13 @@ class Role < ActiveRecord::Base
 
   # Find all the roles that can be given to a project member
   def self.find_all_givable
-    find(:all, conditions: { builtin: 0 }, order: 'position')
+    where(builtin: 0).order('position')
   end
 
   # Return the builtin 'non member' role.  If the role doesn't exist,
   # it will be created on the fly.
   def self.non_member
-    non_member_role = find(:first, conditions: { builtin: BUILTIN_NON_MEMBER })
+    non_member_role = where(builtin: BUILTIN_NON_MEMBER).first
     if non_member_role.nil?
       non_member_role = create(name: 'Non member', position: 0) do |role|
         role.builtin = BUILTIN_NON_MEMBER
@@ -150,7 +151,7 @@ class Role < ActiveRecord::Base
   # Return the builtin 'anonymous' role.  If the role doesn't exist,
   # it will be created on the fly.
   def self.anonymous
-    anonymous_role = find(:first, conditions: { builtin: BUILTIN_ANONYMOUS })
+    anonymous_role = where(builtin: BUILTIN_ANONYMOUS).first
     if anonymous_role.nil?
       anonymous_role = create(name: 'Anonymous', position: 0) do |role|
         role.builtin = BUILTIN_ANONYMOUS

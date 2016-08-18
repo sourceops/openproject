@@ -29,27 +29,18 @@
 require 'spec_helper'
 require 'features/work_packages/work_packages_page'
 
-describe 'Select work package row', type: :feature do
+describe 'Select work package row', type: :feature, js:true, selenium: true do
   let(:user) { FactoryGirl.create(:admin) }
   let(:project) { FactoryGirl.create(:project) }
-  let(:work_package_1) {
-    FactoryGirl.create(:work_package,
-                       project: project)
-  }
-  let(:work_package_2) {
-    FactoryGirl.create(:work_package,
-                       project: project)
-  }
-  let(:work_package_3) {
-    FactoryGirl.create(:work_package,
-                       project: project)
-  }
+  let(:work_package_1) { FactoryGirl.create(:work_package, project: project) }
+  let(:work_package_2) { FactoryGirl.create(:work_package, project: project) }
+  let(:work_package_3) { FactoryGirl.create(:work_package, project: project) }
   let(:work_packages_page) { WorkPackagesPage.new(project) }
 
   include_context 'work package table helpers'
 
   before do
-    allow(User).to receive(:current).and_return(user)
+    login_as(user)
 
     work_package_1
     work_package_2
@@ -60,7 +51,8 @@ describe 'Select work package row', type: :feature do
 
   describe 'Work package row selection', js: true do
     def select_work_package_row(number, mouse_button_behavior = :left)
-      element = find(".workpackages-table tr:nth-of-type(#{number}).issue td.id")
+      element = find(".work-package-table--container tr:nth-of-type(#{number}) .wp-table--cell.status")
+      loading_indicator_saveguard
       case mouse_button_behavior
       when :double
         element.double_click
@@ -72,7 +64,9 @@ describe 'Select work package row', type: :feature do
     end
 
     def select_work_package_row_with_shift(number)
-      element = find(".workpackages-table tr:nth-of-type(#{number}).issue td.id")
+      element = find(".work-package-table--container tr:nth-of-type(#{number}) .wp-table--cell.status")
+      loading_indicator_saveguard
+
       page.driver.browser.action.key_down(:shift)
         .click(element.native)
         .key_up(:shift)
@@ -80,7 +74,9 @@ describe 'Select work package row', type: :feature do
     end
 
     def select_work_package_row_with_ctrl(number)
-      element = find(".workpackages-table tr:nth-of-type(#{number}).issue td.id")
+      element = find(".work-package-table--container tr:nth-of-type(#{number}) .wp-table--cell.status")
+      loading_indicator_saveguard
+
       page.driver.browser.action.key_down(:control)
         .click(element.native)
         .key_up(:control)
@@ -88,7 +84,7 @@ describe 'Select work package row', type: :feature do
     end
 
     def check_row_selection_state(row_index, state = true)
-      selector = ".workpackages-table tr:nth-of-type(#{row_index}).issue input[type=checkbox]:checked"
+      selector = ".work-package-table--container tr:nth-of-type(#{row_index}).issue input[type=checkbox]:checked"
 
       expect(page).to (state ? have_selector(selector) : have_no_selector(selector))
     end
@@ -97,8 +93,6 @@ describe 'Select work package row', type: :feature do
       let(:indices) { Array(index) }
 
       it do
-        Capybara.default_selector = :css
-
         indices.each do |i|
           check_row_selection_state(i)
         end
@@ -109,8 +103,6 @@ describe 'Select work package row', type: :feature do
       let(:indices) { Array(index) }
 
       it do
-        Capybara.default_selector = :css
-
         indices.each do |i|
           check_row_selection_state(i, false)
         end
@@ -118,7 +110,7 @@ describe 'Select work package row', type: :feature do
     end
 
     shared_examples_for 'right click preserves selection' do
-      before { select_work_package_row(selected_rows.first, :right) }
+      before do select_work_package_row(selected_rows.first, :right) end
 
       it_behaves_like 'work package row selected' do
         let(:index) { selected_rows }
@@ -131,7 +123,7 @@ describe 'Select work package row', type: :feature do
 
     describe 'single selection' do
       shared_examples_for 'single select' do
-        before { select_work_package_row(1, mouse_button) }
+        before do select_work_package_row(1, :left) end
 
         it_behaves_like 'work package row selected' do
           let(:index) { 1 }
@@ -182,7 +174,7 @@ describe 'Select work package row', type: :feature do
 
     describe 'range selection' do
       context 'first row selected' do
-        before { select_work_package_row_with_shift(1) }
+        before do select_work_package_row_with_shift(1) end
 
         it_behaves_like 'work package row selected' do
           let(:index) { 1 }
@@ -199,7 +191,7 @@ describe 'Select work package row', type: :feature do
           end
 
           context 'uninvolved row' do
-            before { check_row_selection_state(2) }
+            before do check_row_selection_state(2) end
 
             it_behaves_like 'work package row not selected' do
               let(:index) { 3 }
@@ -244,7 +236,7 @@ describe 'Select work package row', type: :feature do
       end
 
       context 'swapping' do
-        before { select_work_package_row(2) }
+        before do select_work_package_row(2) end
 
         it_behaves_like 'work package row selected' do
           let(:index) { 2 }
@@ -279,7 +271,9 @@ describe 'Select work package row', type: :feature do
     end
 
     describe 'specific selection' do
-      before { select_work_package_row_with_ctrl(1) }
+      before do
+        select_work_package_row_with_ctrl(1)
+      end
 
       it_behaves_like 'work package row selected' do
         # apparently it should be selected if there one row only
@@ -297,7 +291,9 @@ describe 'Select work package row', type: :feature do
         end
 
         context 'uninvolved row' do
-          before { check_row_selection_state(3) }
+          before do
+            check_row_selection_state(3)
+          end
 
           it_behaves_like 'work package row not selected' do
             let(:index) { 2 }
@@ -311,13 +307,50 @@ describe 'Select work package row', type: :feature do
       end
     end
 
-    describe 'opening work package details' do
+    describe 'opening work package full screen view' do
       before do
         select_work_package_row(1, :double)
       end
 
-      it_behaves_like 'work package row selected' do
-        let(:index) { 1 }
+      it do
+        expect(page).to have_selector('.work-packages--details--subject',
+                                      text: work_package_3.subject)
+      end
+    end
+
+    describe 'opening work package edit mode' do
+      before do
+        select_work_package_row(1, :right)
+        within '.dropdown-menu' do
+          click_on 'Edit'
+        end
+      end
+
+      it do
+        wp_page = Pages::FullWorkPackage.new(work_package_3)
+        subject_field = wp_page.edit_field :subject
+
+        subject_field.expect_active!
+        expect(subject_field.input_element.value).to eq(work_package_3.subject)
+
+        # Cancel edit
+        find('#work-packages--edit-actions-cancel').click
+      end
+    end
+
+    describe 'opening last selected work package' do
+      before do
+        select_work_package_row(2)
+        check_row_selection_state(2)
+      end
+
+      it do
+        find('#work-packages-details-view-button').click
+
+        split_wp = Pages::SplitWorkPackage.new(work_package_2)
+        split_wp.expect_attributes Subject: work_package_2.subject
+
+        find('#work-packages-list-view-button').click
       end
     end
   end

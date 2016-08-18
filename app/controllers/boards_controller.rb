@@ -57,10 +57,10 @@ class BoardsController < ApplicationController
                 'updated_on' => "#{Message.table_name}.updated_on"
 
     respond_to do |format|
-      format.html {
+      format.html do
         set_topics
 
-        gon.rabl 'app/views/messages/index.rabl'
+        gon.rabl template: 'app/views/messages/index.rabl'
         gon.project_id = @project.id
         gon.activity_modul_enabled = @project.module_enabled?('activity')
         gon.board_id = @board.id
@@ -71,21 +71,21 @@ class BoardsController < ApplicationController
 
         @message = Message.new
         render action: 'show', layout: !request.xhr?
-      }
-      format.json {
+      end
+      format.json do
         set_topics
 
-        gon.rabl 'app/views/messages/index.rabl'
+        gon.rabl template: 'app/views/messages/index.rabl'
 
         render template: 'messages/index'
-      }
-      format.atom {
+      end
+      format.atom do
         @messages = @board.messages.order(["#{Message.table_name}.sticked_on ASC", sort_clause].compact.join(', '))
                     .includes(:author, :board)
                     .limit(Setting.feeds_limit.to_i)
 
         render_feed(@messages, title: "#{@project}: #{@board}")
-      }
+      end
     end
   end
 
@@ -135,6 +135,7 @@ class BoardsController < ApplicationController
 
   def destroy
     @board.destroy
+    flash[:notice] = l(:notice_successful_delete)
     redirect_to_settings_in_projects
   end
 

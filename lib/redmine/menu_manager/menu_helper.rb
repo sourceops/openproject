@@ -52,47 +52,37 @@ module Redmine::MenuManager::MenuHelper
     MenuItems::WikiMenuItem.main_items(project_wiki).each do |main_item|
       Redmine::MenuManager.loose :project_menu do |menu|
         menu.push "#{main_item.item_class}".to_sym,
-                  { controller: '/wiki', action: 'show', id: CGI.escape(main_item.title) },
-                    param: :project_id,
-                    caption: main_item.name,
-                    after: :repository,
-                    html: {class: 'icon2 icon-wiki'}
-
-        menu.push :"#{main_item.item_class}_new_page",
-                  { action:"new_child", controller:"/wiki", id: CGI.escape(main_item.title) },
-                  param:   :project_id,
-                  caption: :create_child_page,
-                  html:    {class: 'icon2 icon-add'},
-                  parent:  "#{main_item.item_class}".to_sym if main_item.new_wiki_page and
-                    WikiPage.find_by_wiki_id_and_title(project_wiki.id, main_item.title)
-
-        menu.push :"#{main_item.item_class}_toc",
-                  { action: 'index', controller: '/wiki', id: CGI.escape(main_item.title) },
-                  param:   :project_id,
-                  caption: :label_table_of_contents,
-                  html:    {class: 'icon2 icon-list-view1'},
-                  parent:  "#{main_item.item_class}".to_sym if main_item.index_page
+                  { controller: '/wiki', action: 'show', id: main_item.slug },
+                  param: :project_id,
+                  caption: main_item.name,
+                  after: :repository,
+                  html: { class: 'icon2 icon-wiki' }
 
         main_item.children.each do |child|
           menu.push "#{child.item_class}".to_sym,
-                    { controller: '/wiki', action: 'show', id: CGI.escape(child.title) },
+                    { controller: '/wiki', action: 'show', id: child.slug },
                     param: :project_id,
                     caption: child.name,
-                    html:    {class: 'icon2 icon-wiki2'},
+                    html:    { class: 'icon2 icon-wiki2' },
                     parent: "#{main_item.item_class}".to_sym
         end
-        # FIXME using wiki_menu_item#title to reference the wiki page and wiki_menu_item#name as the menu item representation feels wrong
       end
     end
   end
 
-  def build_work_packages_menu(project)
-    query_menu_items = visible_queries.map(&:query_menu_item).compact
+  def build_work_packages_menu(_project)
+    query_menu_items = visible_queries
+                       .includes(:query_menu_item)
+                       .map(&:query_menu_item)
+                       .compact
 
     Redmine::MenuManager.loose :project_menu do |menu|
       query_menu_items.each do |query_menu_item|
         # url = project_work_packages_path(project, query_id: query_menu_item.navigatable_id) does not work because the authorization check fails
-        url = { controller: '/work_packages', action: 'index', params: {query_id: query_menu_item.navigatable_id} }
+        url = { controller: '/work_packages',
+                action: 'index',
+                state: nil,
+                params: { query_id: query_menu_item.navigatable_id } }
         menu.push query_menu_item.unique_name,
                   url,
                   param: :project_id,
@@ -100,7 +90,7 @@ module Redmine::MenuManager::MenuHelper
                   parent: :work_packages,
                   html:    {
                     class: 'icon2 icon-pin query-menu-item',
-                    "data-ui-route" => '',
+                    'data-ui-route' => '',
                     'query-menu-item' => 'query-menu-item',
                     'object-id' => query_menu_item.navigatable_id
                   }
@@ -113,42 +103,62 @@ module Redmine::MenuManager::MenuHelper
     Redmine::MenuManager.items(menu_name).size > 1 # 1 element is the root
   end
 
-  def render_menu(menu, project=nil)
+  def render_menu(menu, project = nil)
     links = []
     menu_items_for(menu, project) do |node|
       links << render_menu_node(node, project)
     end
-    links.empty? ? nil : content_tag('ul', links.join("\n").html_safe, class: "menu_root")
+    links.empty? ? nil : content_tag('ul', links.join("\n").html_safe, class: 'menu_root')
   end
 
-  def render_drop_down_menu_node(label, items_or_options_with_block = nil, html_options = {}, &block)
+  ##
+  # Render a dropdown menu item with the given MenuItem children.
+  # Caller may add additional items through the optional block.
+  # Remaining options are passed through to +render_menu_dropdown+.
+  def render_menu_dropdown_with_items(label:, label_options:, items:, project: nil, options: {})
+    selected = any_item_selected?(items)
+    label_node = render_drop_down_label_node(label, selected, label_options)
 
-    items, options = if block_given?
-                       [[], items_or_options_with_block || {} ]
-                     else
-                       [items_or_options_with_block, html_options]
-                     end
+    render_menu_dropdown(label_node, options) do
+      items.each do |item|
+        concat render_menu_node(item, project)
+      end
 
-    return "" if items.empty? && !block_given?
-
-    options.reverse_merge!({ class: "drop-down" })
-
-    content_tag :li, options do
-      label + if block_given?
-                yield
-              else
-                content_tag :ul, style: "display:none" do
-
-                  items.map do |item|
-                    render_menu_node(item)
-                  end.join(" ").html_safe
-                end
-              end
+      concat(yield) if block_given?
     end
   end
 
-  def render_menu_node(node, project=nil)
-    return "" if project and not allowed_node?(node, User.current, project)
+  ##
+  # Render a dropdown menu item with arbitrary content.
+  # As these are not menu-items, the whole dropdown may never be marked selected.
+  # Available options:
+  # menu_item_class: Additional classes for the menu item li wrapper
+  # drop_down_class: Additional classes for the hidden drop down
+  def render_menu_dropdown(label_node, options = {}, &block)
+    content_tag :li, class: "#{options[:menu_item_class]} drop-down" do
+      concat(label_node)
+      concat(content_tag(:ul,
+                         style: 'display:none',
+                         id: options[:drop_down_id],
+                         class: options[:drop_down_class],
+                         &block))
+    end
+  end
+
+  def render_drop_down_label_node(label, selected, options = {})
+    options[:title] ||= label
+    options[:aria] = { haspopup: 'true' }
+    options[:class] = "#{options[:class]} #{selected ? 'selected' : ''}"
+
+    link_to(you_are_here_info(selected).html_safe + label, '', options)
+  end
+
+  def any_item_selected?(items)
+    items.any? { |item| item.name == current_menu_item }
+  end
+
+  def render_menu_node(node, project = nil)
+    return '' if project and not allowed_node?(node, User.current, project)
     if node.has_children? || !node.child_menus.nil?
       render_menu_node_with_children(node, project)
     else
@@ -157,14 +167,14 @@ module Redmine::MenuManager::MenuHelper
     end
   end
 
-  def render_menu_node_with_children(node, project=nil)
+  def render_menu_node_with_children(node, project = nil)
     caption, url, selected = extract_node_details(node, project)
 
     content_tag :li do
       # Standard children
-      standard_children_list = node.children.map do |child|
-                                 render_menu_node(child, project)
-                               end.join.html_safe
+      standard_children_list = node.children.map { |child|
+        render_menu_node(child, project)
+      }.join.html_safe
 
       # Unattached children
       unattached_children_list = render_unattached_children_menu(node, project)
@@ -184,7 +194,7 @@ module Redmine::MenuManager::MenuHelper
   def render_unattached_children_menu(node, project)
     return nil unless node.child_menus
 
-    "".tap do |child_html|
+    ''.tap do |child_html|
       unattached_children = node.child_menus.call(project)
       # Tree nodes support #each so we need to do object detection
       if unattached_children.is_a? Array
@@ -192,22 +202,23 @@ module Redmine::MenuManager::MenuHelper
           child_html << content_tag(:li, render_unattached_menu_item(child, project))
         end
       else
-        raise Redmine::MenuManager::MenuError, ":child_menus must be an array of MenuItems"
+        raise Redmine::MenuManager::MenuError, ':child_menus must be an array of MenuItems'
       end
     end.html_safe
   end
 
   def render_single_menu_node(item, caption, url, selected)
-    link_text    = you_are_here_info(selected) + caption
+    link_text = ''.html_safe
+    link_text << you_are_here_info(selected)
+    link_text << content_tag(:span, caption, lang: menu_item_locale(item))
     html_options = item.html_options(selected: selected)
     html_options[:title] ||= caption
 
-    html_options[:lang] = menu_item_locale(item)
     link_to link_text, url, html_options
   end
 
   def render_unattached_menu_item(menu_item, project)
-    raise Redmine::MenuManager::MenuError, ":child_menus must be an array of MenuItems" unless menu_item.is_a? Redmine::MenuManager::MenuItem
+    raise Redmine::MenuManager::MenuError, ':child_menus must be an array of MenuItems' unless menu_item.is_a? Redmine::MenuManager::MenuItem
 
     if User.current.allowed_to?(menu_item.url, project)
       link_to(menu_item.caption,
@@ -216,7 +227,7 @@ module Redmine::MenuManager::MenuHelper
     end
   end
 
-  def menu_items_for(menu, project=nil)
+  def menu_items_for(menu, project = nil)
     items = []
     Redmine::MenuManager.items(menu).root.children.each do |node|
       if allowed_node?(node, User.current, project) && visible_node?(menu, node)
@@ -227,14 +238,13 @@ module Redmine::MenuManager::MenuHelper
         end
       end
     end
-    return block_given? ? nil : items
+    block_given? ? nil : items
   end
 
-  def extract_node_details(node, project=nil)
-    item = node
+  def extract_node_details(item, project = nil)
     url = case item.url
     when Hash
-      project.nil? ? item.url : {item.param => project}.merge(item.url)
+      project.nil? ? item.url : { item.param => project }.merge(item.url)
     when Symbol
       send(item.url)
     else
@@ -244,7 +254,7 @@ module Redmine::MenuManager::MenuHelper
 
     selected = current_menu_item == item.name
 
-    return [caption, url, selected]
+    [caption, url, selected]
   end
 
   # Checks if a user is allowed to access the menu item by:
@@ -255,9 +265,7 @@ module Redmine::MenuManager::MenuHelper
     if node.condition && !node.condition.call(project)
       # Condition that doesn't pass
       return false
-    end
-
-    if project
+    elsif project && !node.omit_path_check
       return user && user.allowed_to?(node.url, project)
     else
       # outside a project, all menu items allowed

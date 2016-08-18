@@ -108,7 +108,7 @@ describe UserMailer, type: :mailer do
 
   describe '#work_package_added' do
     before do
-      UserMailer.work_package_added(recipient, work_package, user).deliver
+      UserMailer.work_package_added(recipient, journal, user).deliver_now
     end
 
     it_behaves_like 'mail is sent'
@@ -122,7 +122,7 @@ describe UserMailer, type: :mailer do
 
   describe '#work_package_updated' do
     before do
-      UserMailer.work_package_updated(recipient, journal, user).deliver
+      UserMailer.work_package_updated(recipient, journal, user).deliver_now
     end
 
     it_behaves_like 'mail is sent'
@@ -130,11 +130,24 @@ describe UserMailer, type: :mailer do
     it_behaves_like 'does only send mails to author if permitted'
   end
 
+  describe '#work_package_watcher_added' do
+    let(:watcher_setter) { user }
+    before do
+      UserMailer.work_package_watcher_added(work_package, recipient, watcher_setter).deliver_now
+    end
+
+    it_behaves_like 'mail is sent'
+
+    it 'contains the WP subject in the mail subject' do
+      expect(ActionMailer::Base.deliveries.first.subject).to include(work_package.subject)
+    end
+  end
+
   describe :wiki_content_added do
     let(:wiki_content) { FactoryGirl.create(:wiki_content) }
 
     before do
-      UserMailer.wiki_content_added(recipient, wiki_content, user).deliver
+      UserMailer.wiki_content_added(recipient, wiki_content, user).deliver_now
     end
 
     it_behaves_like 'mail is sent'
@@ -146,7 +159,7 @@ describe UserMailer, type: :mailer do
     let(:wiki_content) { FactoryGirl.create(:wiki_content) }
 
     before do
-      UserMailer.wiki_content_updated(recipient, wiki_content, user).deliver
+      UserMailer.wiki_content_updated(recipient, wiki_content, user).deliver_now
     end
 
     it_behaves_like 'mail is sent'
@@ -213,7 +226,7 @@ describe UserMailer, type: :mailer do
           end
 
           it 'displays changed done ratio' do
-            is_expected.to match('% done changed from 40 to 100')
+            is_expected.to include('Progress (%) changed from 40 to 100')
           end
         end
 
@@ -223,7 +236,7 @@ describe UserMailer, type: :mailer do
           end
 
           it 'displays new done ratio' do
-            is_expected.to match('% done changed from 0 to 100')
+            is_expected.to include('Progress (%) changed from 0 to 100')
           end
         end
 
@@ -233,7 +246,7 @@ describe UserMailer, type: :mailer do
           end
 
           it 'displays deleted done ratio' do
-            is_expected.to match('% done changed from 50 to 0')
+            is_expected.to include('Progress (%) changed from 50 to 0')
           end
         end
       end
@@ -488,7 +501,7 @@ describe UserMailer, type: :mailer do
         end
 
         it 'displays changed done ratio' do
-          is_expected.to match(expected)
+          is_expected.to include(expected)
         end
       end
 
@@ -500,7 +513,7 @@ describe UserMailer, type: :mailer do
         end
 
         it 'displays new done ratio' do
-          is_expected.to match(expected)
+          is_expected.to include(expected)
         end
       end
 
@@ -512,7 +525,7 @@ describe UserMailer, type: :mailer do
         end
 
         it 'displays deleted done ratio' do
-          is_expected.to match(expected)
+          is_expected.to include(expected)
         end
       end
     end

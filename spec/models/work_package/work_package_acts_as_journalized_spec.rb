@@ -61,7 +61,7 @@ describe WorkPackage, type: :model do
     end
 
     context 'nothing is changed' do
-      before { work_package.save! }
+      before do work_package.save! end
 
       it { expect(Journal.all.count).to eq(1) }
     end
@@ -88,10 +88,9 @@ describe WorkPackage, type: :model do
                            priority: priority)
       }
 
-      before { work_package_1.description = changed_description }
+      before do work_package_1.description = changed_description end
 
       context 'when a new journal is created tracking a simultaneously applied change' do
-
         before do
           work_package_1.subject += 'changed'
           work_package_1.save!
@@ -163,7 +162,7 @@ describe WorkPackage, type: :model do
       end
 
       context 'last created journal' do
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it 'contains all changes' do
           [:subject, :description, :type_id, :status_id, :priority_id,
@@ -206,13 +205,15 @@ describe WorkPackage, type: :model do
 
       describe 'adding journal with a missing journal and an existing journal' do
         before do
-          work_package.update_by!(current_user, notes: 'note to be deleted')
+          allow(UpdateWorkPackageService).to receive(:contract).and_return(NoopContract)
+          service = UpdateWorkPackageService.new(user: current_user, work_package: work_package)
+          service.call(attributes: { journal_notes: 'note to be deleted' })
           work_package.reload
-          work_package.update_by!(current_user, description: 'description v2')
+          service.call(attributes: { description: 'description v2' })
           work_package.reload
-          work_package.journals.find_by_notes('note to be deleted').delete
+          work_package.journals.find_by(notes: 'note to be deleted').delete
 
-          work_package.update_by!(current_user, description: 'description v4')
+          service.call(attributes: { description: 'description v4' })
         end
 
         it 'should create a journal for the last change' do
@@ -233,7 +234,7 @@ describe WorkPackage, type: :model do
       end
 
       context 'new attachment' do
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it { is_expected.to have_key attachment_id }
 
@@ -253,9 +254,9 @@ describe WorkPackage, type: :model do
       end
 
       context 'attachment removed' do
-        before { work_package.attachments.delete(attachment) }
+        before do work_package.attachments.delete(attachment) end
 
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it { is_expected.to have_key attachment_id }
 
@@ -286,7 +287,7 @@ describe WorkPackage, type: :model do
       context 'new custom value' do
         include_context 'work package with custom value'
 
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it { is_expected.to have_key custom_field_id }
 
@@ -306,7 +307,7 @@ describe WorkPackage, type: :model do
           work_package.save!
         end
 
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it { is_expected.to have_key custom_field_id }
 
@@ -341,7 +342,7 @@ describe WorkPackage, type: :model do
           work_package.save!
         end
 
-        subject { work_package.journals.last.changed_data }
+        subject { work_package.journals.last.details }
 
         it { is_expected.to have_key custom_field_id }
 
@@ -375,6 +376,112 @@ describe WorkPackage, type: :model do
 
           it { expect(work_package.journals.last.customizable_journals.count).to eq(0) }
         end
+      end
+    end
+  end
+
+  describe 'Acts as journalized' do
+    before(:each) do
+      Status.delete_all
+      IssuePriority.delete_all
+
+      @type ||= FactoryGirl.create(:type_feature)
+
+      @status_resolved ||= FactoryGirl.create(:status, name: 'Resolved', is_default: false)
+      @status_open ||= FactoryGirl.create(:status, name: 'Open', is_default: true)
+      @status_rejected ||= FactoryGirl.create(:status, name: 'Rejected', is_default: false)
+
+      role = FactoryGirl.create(:role)
+      FactoryGirl.create(:workflow,
+                         old_status: @status_open,
+                         new_status: @status_resolved,
+                         role: role,
+                         type_id: @type.id)
+      FactoryGirl.create(:workflow,
+                         old_status: @status_resolved,
+                         new_status: @status_rejected,
+                         role: role,
+                         type_id: @type.id)
+
+      @priority_low ||= FactoryGirl.create(:priority_low, is_default: true)
+      @priority_high ||= FactoryGirl.create(:priority_high)
+      @project ||= FactoryGirl.create(:project_with_types)
+
+      @current = FactoryGirl.create(:user, login: 'user1', mail: 'user1@users.com')
+      allow(User).to receive(:current).and_return(@current)
+      @project.add_member!(@current, role)
+
+      @user2 = FactoryGirl.create(:user, login: 'user2', mail: 'user2@users.com')
+
+      @issue ||= FactoryGirl.create(:work_package,
+                                    project: @project,
+                                    status: @status_open,
+                                    type: @type,
+                                    author: @current)
+    end
+
+    describe 'ignore blank to blank transitions' do
+      it 'should not include the "nil to empty string"-transition' do
+        @issue.description = nil
+        @issue.save!
+
+        @issue.description = ''
+        expect(@issue.send(:incremental_journal_changes)).to be_empty
+      end
+    end
+
+    describe 'Acts as journalized recreate initial journal' do
+      it 'should not include certain attributes' do
+        recreated_journal = @issue.recreate_initial_journal!
+
+        expect(recreated_journal.details.include?('rgt')).to eq(false)
+        expect(recreated_journal.details.include?('lft')).to eq(false)
+        expect(recreated_journal.details.include?('lock_version')).to eq(false)
+        expect(recreated_journal.details.include?('updated_at')).to eq(false)
+        expect(recreated_journal.details.include?('updated_on')).to eq(false)
+        expect(recreated_journal.details.include?('id')).to eq(false)
+        expect(recreated_journal.details.include?('type')).to eq(false)
+        expect(recreated_journal.details.include?('root_id')).to eq(false)
+      end
+
+      it 'should not include useless transitions' do
+        recreated_journal = @issue.recreate_initial_journal!
+
+        recreated_journal.details.values.each do |change|
+          expect(change.first).not_to eq(change.last)
+        end
+      end
+
+      it 'should not be different from the initially created journal by aaj' do
+        # Creating four journals total
+        @issue.status = @status_resolved
+        @issue.assigned_to = @user2
+        @issue.save!
+        @issue.reload
+
+        @issue.priority = @priority_high
+        @issue.save!
+        @issue.reload
+
+        @issue.status = @status_rejected
+        @issue.priority = @priority_low
+        @issue.estimated_hours = 3
+        @issue.save!
+
+        initial_journal = @issue.journals.first
+        recreated_journal = @issue.recreate_initial_journal!
+
+        expect(initial_journal).to be_identical(recreated_journal)
+      end
+
+      it 'should not validate with oddly set estimated_hours' do
+        @issue.estimated_hours = 'this should not work'
+        expect(@issue).not_to be_valid
+      end
+
+      it 'should validate with sane estimated_hours' do
+        @issue.estimated_hours = '13h'
+        expect(@issue).to be_valid
       end
     end
   end

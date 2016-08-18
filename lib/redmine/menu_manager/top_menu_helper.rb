@@ -29,11 +29,16 @@
 require 'concerns/omniauth_login'
 
 module Redmine::MenuManager::TopMenuHelper
-  def render_top_menu_left
-    content_tag :ul, id: 'account-nav-left', class: 'menu_root account-nav' do
-      [render_main_top_menu_nodes,
+  include Redmine::MenuManager::TopMenu::HelpMenu
+  include Redmine::MenuManager::TopMenu::ProjectsMenu
+
+  def render_top_menu_left(project)
+    items = split_top_menu_into_main_or_more_menus(project)
+    content_tag :ul, id: 'account-nav-left', class: 'menu_root account-nav hidden-for-mobile' do
+      [render_main_top_menu_nodes(items[:main]),
        render_projects_top_menu_node,
-       render_module_top_menu_node].join.html_safe
+       render_work_packages_top_menu_node(project, items[:work_packages]),
+       render_module_top_menu_node(items[:modules])].join.html_safe
     end
   end
 
@@ -46,45 +51,10 @@ module Redmine::MenuManager::TopMenuHelper
 
   private
 
-  def render_projects_top_menu_node
-    return '' if User.current.anonymous? and Setting.login_required?
-
-    return '' if User.current.anonymous? and User.current.number_of_known_projects.zero?
-
-    heading = link_to l(:label_project_plural),
-                      { controller: '/projects',
-                        action: 'index' },
-                      title: l(:label_project_plural),
-                      accesskey: OpenProject::AccessKeys.key_for(:project_search),
-                      class: 'icon5 icon-unit'
-
-    if User.current.impaired?
-      content_tag :li do
-        heading
-      end
-    else
-      render_drop_down_menu_node heading do
-        content_tag :ul, style: 'display:none' do
-          ret = content_tag :li do
-            link_to l(:label_project_view_all), { controller: '/projects',
-                                                  action: 'index' },
-                    class: 'icon4 icon-list-view2'
-          end
-
-          ret += content_tag :li, id: 'project-search-container' do
-            hidden_field_tag('', '', class: 'select2-select')
-          end
-
-          ret
-        end
-      end
-    end
-  end
-
   def render_user_top_menu_node(items = menu_items_for(:account_menu))
     if User.current.logged?
       render_user_drop_down items
-    elsif Concerns::OmniauthLogin.direct_login?
+    elsif omniauth_direct_login?
       render_direct_login
     else
       render_login_drop_down
@@ -98,16 +68,14 @@ module Redmine::MenuManager::TopMenuHelper
                    class: 'login',
                    title: l(:label_login)
 
-    render_drop_down_menu_node(link, class: 'drop-down last-child') do
-      content_tag :ul do
-        render_login_partial
-      end
+    render_menu_dropdown(link, menu_item_class: 'drop-down last-child') do
+      render_login_partial
     end
   end
 
   def render_direct_login
     login = Redmine::MenuManager::MenuItem.new :login,
-                                               '/login',
+                                               signin_path,
                                                caption: I18n.t(:label_login),
                                                html: { class: 'login' }
 
@@ -115,9 +83,16 @@ module Redmine::MenuManager::TopMenuHelper
   end
 
   def render_user_drop_down(items)
-    render_drop_down_menu_node link_to_user(User.current, title: User.current.to_s),
-                               items,
-                               class: 'drop-down last-child'
+    avatar = avatar(User.current)
+    render_menu_dropdown_with_items(
+      label: avatar.presence || '',
+      label_options: {
+        title: User.current.name,
+        class: (avatar.present? ? '' : 'icon-user')
+      },
+      items: items,
+      options: { drop_down_id: 'user-menu', menu_item_class: 'last-child -hide-icon' }
+    )
   end
 
   def render_login_partial
@@ -131,59 +106,54 @@ module Redmine::MenuManager::TopMenuHelper
     render partial: partial
   end
 
-  def render_module_top_menu_node(items = more_top_menu_items)
-    render_drop_down_menu_node link_to(l(:label_modules), '#', title: l(:label_modules), class: 'icon5 icon-version'),
-                               items,
-                               id: 'more-menu'
+  def render_work_packages_top_menu_node(project, items)
+    return nil if items.empty?
+
+    render_menu_dropdown_with_items(
+      label: l(:label_work_package_plural),
+      label_options: { id: 'work-packages-menu', class: 'icon5 icon-work-packages' },
+      items: items,
+      project: project,
+      options: {
+        drop_down_class: 'drop-down--work-packages'
+      }
+    )
   end
 
-  def render_help_top_menu_node(item = help_menu_item)
-    render_menu_node(item)
+  def render_module_top_menu_node(items)
+    return nil if items.empty?
+
+    render_menu_dropdown_with_items(
+      label: l(:label_modules),
+      label_options: { class: 'icon5 icon-modules' },
+      items: items,
+      options: { drop_down_id: 'more-menu' }
+    )
   end
 
-  def render_main_top_menu_nodes(items = main_top_menu_items)
-    items.map do |item|
+  def render_main_top_menu_nodes(items)
+    items.map { |item|
       render_menu_node(item)
-    end.join(' ')
-  end
-
-  # Menu items for the main top menu
-  def main_top_menu_items
-    split_top_menu_into_main_or_more_menus[:main]
-  end
-
-  # Menu items for the more top menu
-  def more_top_menu_items
-    split_top_menu_into_main_or_more_menus[:more]
+    }.join(' ')
   end
 
   def help_menu_item
     split_top_menu_into_main_or_more_menus[:help]
   end
 
-  # Split the :top_menu into separate :main and :more items
-  def split_top_menu_into_main_or_more_menus
-    unless @top_menu_split
-      items_for_main_level = []
-      items_for_more_level = []
-      help_menu = nil
-      menu_items_for(:top_menu) do |item|
-        if item.name == :my_page
-          items_for_main_level << item
-        elsif item.name == :help
-          help_menu = item
-        elsif item.name == :projects
-          # Remove, present in layout
-        else
-          items_for_more_level << item
-        end
+  # Split the :top_menu into separate :main, :work_package and :modules items
+  def split_top_menu_into_main_or_more_menus(project = nil)
+    items = Hash.new { |h, k| h[k] = [] }
+
+    menu_items_for(:top_menu, project) do |item|
+      if item.name == :help
+        items[:help] = item
+      else
+        context = item.context || :modules
+        items[context] << item
       end
-      @top_menu_split = {
-        main: items_for_main_level,
-        more: items_for_more_level,
-        help: help_menu
-      }
     end
-    @top_menu_split
+
+    items
   end
 end

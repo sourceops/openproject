@@ -42,15 +42,17 @@ module API
       mount ::API::V3::Projects::ProjectsAPI
       mount ::API::V3::Queries::QueriesAPI
       mount ::API::V3::Render::RenderAPI
+      mount ::API::V3::Repositories::RevisionsAPI
       mount ::API::V3::Statuses::StatusesAPI
       mount ::API::V3::StringObjects::StringObjectsAPI
       mount ::API::V3::Types::TypesAPI
       mount ::API::V3::Users::UsersAPI
+      mount ::API::V3::UserPreferences::UserPreferencesAPI
       mount ::API::V3::Versions::VersionsAPI
       mount ::API::V3::WorkPackages::WorkPackagesAPI
 
       get '/' do
-        RootRepresenter.new({})
+        RootRepresenter.new({}, current_user: current_user)
       end
     end
   end

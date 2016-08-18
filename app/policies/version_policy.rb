@@ -29,26 +29,23 @@
 class VersionPolicy < BasePolicy
   private
 
-  def cache
-    @cache ||= Hash.new do |hash, version|
-      # copy checks for the move_work_packages permission. This makes
-      # sense only because the work_packages/moves controller handles
-      # copying multiple work packages.
-      hash[version] = {
-        show: show_allowed?(version)
+  def cache(version)
+    @cache ||= Hash.new do |hash, cached_version|
+      hash[cached_version] = {
+        show: show_allowed?(cached_version)
       }
     end
+
+    @cache[version]
   end
 
   def show_allowed?(version)
     @show_cache ||= Hash.new do |hash, queried_version|
       permissions = [:view_work_packages, :manage_versions]
 
-      hash[queried_version] = permissions.any? do |permission|
-        allowed_condition = Project.allowed_to_condition(user, permission)
-
-        queried_version.projects.where(allowed_condition).exists?
-      end
+      hash[queried_version] = permissions.any? { |permission|
+        queried_version.projects.allowed_to(user, permission).exists?
+      }
     end
 
     @show_cache[version]

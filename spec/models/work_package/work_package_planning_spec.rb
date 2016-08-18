@@ -93,12 +93,12 @@ describe WorkPackage, type: :model do
       }
     }
 
-    it { expect(WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }).to be_valid }
+    it { expect(WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }).to be_valid }
 
     describe 'subject' do
       it 'is invalid w/o a subject' do
         attributes[:subject] = nil
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
@@ -108,7 +108,7 @@ describe WorkPackage, type: :model do
 
       it 'is invalid w/ a subject longer than 255 characters' do
         attributes[:subject] = 'A' * 500
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
@@ -120,7 +120,7 @@ describe WorkPackage, type: :model do
     describe 'start_date' do
       it 'is valid w/o a start_date' do
         attributes[:start_date] = nil
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).to be_valid
 
@@ -131,7 +131,7 @@ describe WorkPackage, type: :model do
     describe 'due_date' do
       it 'is valid w/o a due_date' do
         attributes[:due_date] = nil
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).to be_valid
 
@@ -141,31 +141,40 @@ describe WorkPackage, type: :model do
       it 'is invalid if start_date is after due_date' do
         attributes[:start_date] = Date.today
         attributes[:due_date]   = Date.today - 1.week
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
         expect(planning_element.errors[:due_date]).to be_present
-        expect(planning_element.errors[:due_date]).to eq(['must be greater than start date.'])
+        error_message = I18n.t(:greater_than_or_equal_to_start_date, scope: [:activerecord,
+                                                                             :errors,
+                                                                             :messages])
+        expect(planning_element.errors[:due_date]).to eq([error_message])
       end
 
       it 'is invalid if planning_element is milestone and due_date is not on start_date' do
         attributes[:type] = FactoryGirl.build(:type, is_milestone: true)
         attributes[:start_date]            = Date.today
         attributes[:due_date]              = Date.today + 1.week
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
         expect(planning_element.errors[:due_date]).to be_present
-        expect(planning_element.errors[:due_date]).to eq(['is not on start date, although this is required for milestones.'])
+        error_message = I18n.t(:not_start_date, scope: [:activerecord,
+                                                        :errors,
+                                                        :models,
+                                                        :work_package,
+                                                        :attributes,
+                                                        :due_date])
+        expect(planning_element.errors[:due_date]).to eq([error_message])
       end
     end
 
     describe 'project' do
       it 'is invalid w/o a project' do
         attributes[:project_id] = nil
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
@@ -179,11 +188,11 @@ describe WorkPackage, type: :model do
 
       it 'is invalid if parent is_milestone' do
         parent = WorkPackage.new.tap do |pe|
-          pe.send(:assign_attributes, attributes.merge(type: FactoryGirl.build(:type, is_milestone: true)), without_protection: true)
+          pe.send(:assign_attributes, attributes.merge(type: FactoryGirl.build(:type, is_milestone: true)))
         end
 
         attributes[:parent] = parent
-        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes, without_protection: true) }
+        planning_element = WorkPackage.new.tap { |pe| pe.send(:assign_attributes, attributes) }
 
         expect(planning_element).not_to be_valid
 
@@ -243,13 +252,13 @@ describe WorkPackage, type: :model do
                          responsible_id:                  responsible.id,
                          type_id:                         type.id,
                          status_id:                       pe_status.id
-                                  )
+                        )
     }
 
     it "has an initial journal, so that it's creation shows up in activity" do
       expect(pe.journals.size).to eq(1)
 
-      changes = pe.journals.first.changed_data.to_hash
+      changes = pe.journals.first.details.to_hash
 
       expect(changes.size).to eq(11)
 
@@ -271,7 +280,7 @@ describe WorkPackage, type: :model do
       pe.update_attribute(:due_date, Date.new(2012, 2, 1))
 
       expect(pe.journals.size).to eq(2)
-      changes = pe.journals.last.changed_data
+      changes = pe.journals.last.details
 
       expect(changes.size).to eq(1)
 
@@ -293,7 +302,7 @@ describe WorkPackage, type: :model do
                            due_date:          Date.new(2012, 1, 31),
                            project_id:        project.id,
                            responsible_id:    responsible.id
-                                         )
+                          )
       }
 
       it 'creates a journal in the parent when end date is changed indirectly' do
@@ -301,7 +310,7 @@ describe WorkPackage, type: :model do
 
         # sanity check
         expect(child_pe.journals.size).to eq(1)
-        expect(pe.journals.size).to eq(2)
+        expect(pe.journals.size).to eq(1)
 
         # update child
         child_pe.reload
@@ -310,13 +319,12 @@ describe WorkPackage, type: :model do
         # reload parent to avoid stale journal caches
         pe.reload
 
-        expect(pe.journals.size).to eq(3)
-        changes = pe.journals.last.changed_data
+        expect(pe.journals.size).to eq(2)
+        changes = pe.journals.last.details
 
         expect(changes.size).to eq(1)
         expect(changes).to include(:start_date)
       end
-
     end
   end
 
@@ -332,7 +340,7 @@ describe WorkPackage, type: :model do
     it 'should delete the object permanently when using destroy' do
       @pe1.destroy
 
-      expect(WorkPackage.find_by_id(@pe1.id)).to be_nil
+      expect(WorkPackage.find_by(id: @pe1.id)).to be_nil
     end
 
     it 'destroys all child elements' do
@@ -345,7 +353,7 @@ describe WorkPackage, type: :model do
       pe1.destroy
 
       [pe1, pe11, pe12, pe121].each do |pe|
-        expect(WorkPackage.find_by_id(pe.id)).to be_nil
+        expect(WorkPackage.find_by(id: pe.id)).to be_nil
       end
     end
   end

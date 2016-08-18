@@ -33,7 +33,13 @@ module OpenProject
   module Scm
     module Adapters
       class Base
+        include CheckoutInstructions
+
         attr_accessor :url, :root_url
+
+        def self.vendor
+          name.demodulize.underscore
+        end
 
         def initialize(url, root_url = nil)
           self.url = url
@@ -41,6 +47,14 @@ module OpenProject
         end
 
         def local?
+          false
+        end
+
+        ##
+        # Overriden by descendants when
+        # they are able to retrieve current
+        # storage usage.
+        def storage_available?
           false
         end
 
@@ -57,7 +71,7 @@ module OpenProject
         end
 
         def vendor
-          self.class.name.demodulize
+          self.class.vendor
         end
 
         def info

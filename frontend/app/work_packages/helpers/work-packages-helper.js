@@ -26,25 +26,16 @@
 // See doc/COPYRIGHT.rdoc for more details.
 //++
 
-/* jshint camelcase: false */
-
 module.exports = function(TimezoneService, currencyFilter, CustomFieldHelper) {
 
   var WorkPackagesHelper = {
     getRowObjectContent: function(object, option) {
-      var content;
-
-      if(CustomFieldHelper.isCustomFieldKey(option)){
-        var custom_field_id = CustomFieldHelper.getCustomFieldId(option);
-        content = WorkPackagesHelper.getRawCustomValue(object, custom_field_id);
-      } else {
-        content = object[option];
-      }
+      var content = object[option];
 
       switch(typeof(content)) {
         case 'object':
           if (content === null) { return ''; }
-          return content.name || content.subject || '';
+          return content.name || content.subject || content.title || content.value || '';
         case 'number':
           return content;
         default:
@@ -61,20 +52,6 @@ module.exports = function(TimezoneService, currencyFilter, CustomFieldHelper) {
         }
       } else {
         workPackage[attributeName] = data;
-      }
-    },
-
-    getRawCustomValue: function(object, customFieldId) {
-      if (!object.custom_values) { return null; }
-
-      var values = object.custom_values.filter(function(customValue){
-        return customValue && customValue.custom_field_id === customFieldId;
-      });
-
-      if (values && values.length) {
-        return values[0].value;
-      } else {
-        return '';
       }
     },
 
@@ -149,6 +126,14 @@ module.exports = function(TimezoneService, currencyFilter, CustomFieldHelper) {
           return value ? TimezoneService.formattedDate(value) : '';
         case 'currency':
           return currencyFilter(value, 'EUR ');
+        case 'Duration':
+          return TimezoneService.formattedDuration(value);
+        case 'DateTime':
+          return TimezoneService.formattedDatetime(value);
+        case('Boolean'):
+          return value ? I18n.t('js.general_text_yes') : I18n.t('js.general_text_no');
+        case 'Date':
+          return TimezoneService.formattedDate(value);
         default:
           return value;
       }
@@ -156,72 +141,6 @@ module.exports = function(TimezoneService, currencyFilter, CustomFieldHelper) {
 
     parseDateTime: function(value) {
       return new Date(Date.parse(value.replace(/(A|P)M$/, '')));
-    },
-
-    getParent: function(workPackage) {
-      var wpParent = workPackage.links.parent;
-
-      return (wpParent) ? [wpParent.fetch()] : [];
-    },
-
-    getChildren: function(workPackage) {
-      var children = workPackage.links.children;
-      var result = [];
-
-      if (children) {
-        for (var x = 0; x < children.length; x++) {
-          var child = children[x];
-
-          result.push(child);
-        }
-      }
-
-      return result;
-    },
-
-    getRelationsOfType: function(workPackage, type) {
-      var relations = workPackage.embedded.relations;
-      var result = [];
-
-      if (relations) {
-        for (var x = 0; x < relations.length; x++) {
-          var relation = relations[x];
-
-          if (relation.props._type == type) {
-            result.push(relation);
-          }
-        }
-      }
-
-      return result;
-    },
-
-    //Note: The following methods are display helpers and so don't really
-    //belong here but are shared between directives so it's probably the best
-    //place for them just now.
-    getState: function(workPackage) {
-      return (workPackage.embedded.status.props.isClosed) ? 'closed' : '';
-    },
-
-    getFullIdentifier: function(workPackage) {
-      var id = '#' + workPackage.props.id;
-      if (workPackage.props.type) {
-        id += ' ' + workPackage.props.type + ':';
-      }
-      id += ' ' + workPackage.props.subject;
-
-      return id;
-    },
-
-    collapseStateIcon: function(collapsed) {
-      var iconClass = 'icon-arrow-right5-';
-      if (collapsed) {
-        iconClass += '3';
-      } else {
-        iconClass += '2';
-      }
-
-      return iconClass;
     }
   };
 

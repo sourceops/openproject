@@ -99,13 +99,12 @@ module Redmine::Acts::Journalized
       # of the object. Useful for objects that didn't have an initial journal
       # created (e.g. legacy data)
       def recreate_initial_journal!
-        new_journal = journals.find_by_version(1)
+        new_journal = journals.find_by(version: 1)
         new_journal ||= journals.build
 
         initial_changes = {}
 
         JournalManager.journal_class(self.class).journaled_attributes.each do |name|
-
           # Set the current attributes as initial attributes
           # This works as a fallback if no prior change is found
           initial_changes[name] = send(name)
@@ -113,10 +112,10 @@ module Redmine::Acts::Journalized
           # Try to find the real initial values
           unless journals.empty?
             journals[1..-1].each do |journal|
-              unless journal.changed_data[name].nil?
+              unless journal.details[name].nil?
                 # Found the first change in journals
                 # Copy the first value as initial change value
-                initial_changes[name] = journal.changed_data[name].first
+                initial_changes[name] = journal.details[name].first
                 break
               end
             end
@@ -130,7 +129,7 @@ module Redmine::Acts::Journalized
         attributes_setter = ActiveRecord::Base.instance_method(:assign_attributes)
         attributes_setter = attributes_setter.bind(fill_object)
 
-        attributes_setter.call(initial_changes, without_protection: true)
+        attributes_setter.call(initial_changes)
 
         # Call the journal creating method
         changed_data = fill_object.send(:merge_journal_changes)
@@ -166,8 +165,8 @@ module Redmine::Acts::Journalized
       def journaled_columns
         case
         when vestal_journals_options[:only] then self.class.column_names & vestal_journals_options[:only]
-          when vestal_journals_options[:except] then self.class.column_names - vestal_journals_options[:except]
-          else self.class.column_names
+        when vestal_journals_options[:except] then self.class.column_names - vestal_journals_options[:except]
+        else self.class.column_names
         end - %w(created_at updated_at)
       end
 
@@ -180,9 +179,9 @@ module Redmine::Acts::Journalized
       # Specifies the attributes used during journal creation. This is separated into its own
       # method so that it can be overridden by the VestalVersions::Users feature.
       def journal_attributes
-        attributes = { journaled_id: id, activity_type: activity_type,
-                       changed_data: journal_changes, version: last_version + 1,
-                       notes: journal_notes, user_id: (journal_user.try(:id) || User.current.try(:id))
+        { journaled_id: id, activity_type: activity_type,
+          details: journal_changes, version: last_version + 1,
+          notes: journal_notes, user_id: (journal_user.try(:id) || User.current.try(:id))
         }.merge(extra_journal_attributes || {})
       end
     end

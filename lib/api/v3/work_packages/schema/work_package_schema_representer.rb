@@ -49,23 +49,71 @@ module API
             def create(work_package_schema, context)
               create_class(work_package_schema).new(work_package_schema, context)
             end
+
+            def visibility(property)
+              lambda do
+                if type = represented.type
+                  key = property.to_s.gsub /^customField/, "custom_field_"
+
+                  type.attribute_visibility[key]
+                end
+              end
+            end
+
+            # override the various schema methods to include
+            # the same visibility lambda for all properties by default
+
+            def schema(property, *args)
+              opts, _ = args
+              opts[:visibility] = visibility property
+
+              super property, **opts
+            end
+
+            def schema_with_allowed_link(property, *args)
+              opts, _ = args
+              opts[:visibility] = visibility property
+
+              super property, **opts
+            end
+
+            def schema_with_allowed_collection(property, *args)
+              opts, _ = args
+              opts[:visibility] = visibility property
+
+              super property, **opts
+            end
+          end
+
+          def initialize(schema, context)
+            @self_link = context.delete(:self_link) || nil
+            @show_lock_version = !context.delete(:hide_lock_version)
+            @action = context.delete(:action) || :update
+            super(schema, context)
+          end
+
+          def cache_key
+            custom_fields = represented.project.all_work_package_custom_fields
+
+            custom_fields_key = ActiveSupport::Cache.expand_cache_key custom_fields
+
+            ["api/v3/work_packages/schema/#{represented.project.id}-#{represented.type.id}",
+             I18n.locale,
+             represented.type.updated_at,
+             Digest::SHA2.hexdigest(custom_fields_key)]
           end
 
           link :self do
-            unless form_embedded
-              path = api_v3_paths.work_package_schema(represented.project.id, represented.type.id)
-              { href: path }
-            end
+            { href: @self_link } if @self_link
           end
 
           schema :lock_version,
                  type: 'Integer',
                  name_source: -> (*) { I18n.t('api_v3.attributes.lock_version') },
-                 writable: false
+                 show_if: -> (*) { @show_lock_version }
 
           schema :id,
-                 type: 'Integer',
-                 writable: false
+                 type: 'Integer'
 
           schema :subject,
                  type: 'String',
@@ -73,94 +121,112 @@ module API
                  max_length: 255
 
           schema :description,
-                 type: 'Formattable'
+                 type: 'Formattable',
+                 required: false
 
           schema :start_date,
                  type: 'Date',
                  required: false,
-                 writable: -> { represented.start_date_writable? }
+                 show_if: -> (*) { !represented.milestone? }
 
           schema :due_date,
                  type: 'Date',
                  required: false,
-                 writable: -> { represented.due_date_writable? }
+                 show_if: -> (*) { !represented.milestone? }
+
+          schema :date,
+                 type: 'Date',
+                 required: false,
+                 show_if: -> (*) { represented.milestone? }
 
           schema :estimated_time,
                  type: 'Duration',
-                 required: false,
-                 writable: -> { represented.estimated_time_writable? }
+                 required: false
 
           schema :spent_time,
                  type: 'Duration',
-                 writable: false,
-                 show_if: -> (_) do
-                   current_user_allowed_to(:view_time_entries, context: represented.project)
-                 end
+                 required: false
 
           schema :percentage_done,
                  type: 'Integer',
                  name_source: :done_ratio,
-                 writable: -> { represented.percentage_done_writable? },
-                 show_if: -> (*) { Setting.work_package_done_ratio != 'disabled' }
+                 show_if: -> (*) { Setting.work_package_done_ratio != 'disabled' },
+                 required: false
 
           schema :created_at,
-                 type: 'DateTime',
-                 writable: false
+                 type: 'DateTime'
 
           schema :updated_at,
-                 type: 'DateTime',
-                 writable: false
+                 type: 'DateTime'
 
           schema :author,
-                 type: 'User',
-                 writable: false
+                 type: 'User'
 
-          schema :project,
-                 type: 'Project',
-                 writable: false
+          schema_with_allowed_link :project,
+                                   type: 'Project',
+                                   required: true,
+                                   href_callback: -> (*) {
+                                     if @action == :create
+                                       api_v3_paths.available_projects_on_create
+                                     else
+                                       api_v3_paths.available_projects_on_edit(represented.id)
+                                     end
+                                   }
+
+          schema :parent_id,
+                 type: 'Integer',
+                 required: false,
+                 writable: true
+
+          # TODO:
+          # * remove parent_id above in favor of only having :parent
+          # * create an available_work_package_parent resource
+          # * turn :parent into a schema_with_allowed_link
+
+          schema :parent,
+                 type: 'WorkPackage',
+                 required: false,
+                 writable: true
 
           schema_with_allowed_link :assignee,
                                    type: 'User',
                                    required: false,
                                    href_callback: -> (*) {
-                                     api_v3_paths.available_assignees(represented.project.id)
+                                     if represented.project
+                                       api_v3_paths.available_assignees(represented.project_id)
+                                     end
                                    }
 
           schema_with_allowed_link :responsible,
                                    type: 'User',
                                    required: false,
                                    href_callback: -> (*) {
-                                     api_v3_paths.available_responsibles(represented.project.id)
+                                     if represented.project
+                                       api_v3_paths.available_responsibles(represented.project_id)
+                                     end
                                    }
 
           schema_with_allowed_collection :type,
-                                         values_callback: -> (*) {
-                                           represented.assignable_types
-                                         },
                                          value_representer: Types::TypeRepresenter,
                                          link_factory: -> (type) {
                                            {
                                              href: api_v3_paths.type(type.id),
                                              title: type.name
                                            }
-                                         }
+                                         },
+                                         has_default: false
 
           schema_with_allowed_collection :status,
-                                         values_callback: -> (*) {
-                                           represented.assignable_statuses_for(current_user)
-                                         },
                                          value_representer: Statuses::StatusRepresenter,
                                          link_factory: -> (status) {
                                            {
                                              href: api_v3_paths.status(status.id),
                                              title: status.name
                                            }
-                                         }
+                                         },
+                                         has_default: true
 
           schema_with_allowed_collection :category,
-                                         values_callback: -> (*) {
-                                           represented.assignable_categories
-                                         },
                                          value_representer: Categories::CategoryRepresenter,
                                          link_factory: -> (category) {
                                            {
@@ -171,9 +237,6 @@ module API
                                          required: false
 
           schema_with_allowed_collection :version,
-                                         values_callback: -> (*) {
-                                           represented.assignable_versions
-                                         },
                                          value_representer: Versions::VersionRepresenter,
                                          link_factory: -> (version) {
                                            {
@@ -184,16 +247,14 @@ module API
                                          required: false
 
           schema_with_allowed_collection :priority,
-                                         values_callback: -> (*) {
-                                           represented.assignable_priorities
-                                         },
                                          value_representer: Priorities::PriorityRepresenter,
                                          link_factory: -> (priority) {
                                            {
                                              href: api_v3_paths.priority(priority.id),
                                              title: priority.name
                                            }
-                                         }
+                                         },
+                                         has_default: true
         end
       end
     end

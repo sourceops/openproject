@@ -35,8 +35,6 @@ require 'open_project/journal_formatter/custom_field'
 
 # The ActiveRecord model representing journals.
 class LegacyJournal < ActiveRecord::Base
-  # unloadable
-
   include Comparable
   include JournalFormatter
   include JournalDeprecated
@@ -48,11 +46,9 @@ class LegacyJournal < ActiveRecord::Base
   # Define a default class_name to prevent `uninitialized constant Journal::Journaled`
   # subclasses will be given an actual class name when they are created by aaj
   #
-  #  e.g. IssueJournal will get :class_name => 'Issue'
+  #  e.g. IssueJournal will get class_name: 'Issue'
   belongs_to :journaled, class_name: 'Journal'
   belongs_to :user
-
-  # attr_protected :user_id
 
   register_journal_formatter :diff, OpenProject::JournalFormatter::Diff
   register_journal_formatter :attachment, OpenProject::JournalFormatter::Attachment
@@ -63,7 +59,9 @@ class LegacyJournal < ActiveRecord::Base
 
   # Scopes to all journals excluding the initial journal - useful for change
   # logs like the history on issue#show
-  scope 'changing', conditions: ['version > 1']
+  scope :changing, -> {
+    where(['version > 1'])
+  }
 
   # let all child classes have Journal as it's model name
   # used to not having to create another route for every subclass of Journal
@@ -104,8 +102,6 @@ class LegacyJournal < ActiveRecord::Base
       journaled.project
     elsif journaled.is_a? Project
       journaled
-    else
-      nil
     end
   end
 
@@ -117,6 +113,7 @@ class LegacyJournal < ActiveRecord::Base
     attributes['changed_data'] || {}
   end
 
+  # TODO Evaluate whether this can be removed without disturbing any migrations
   alias_method :changed_data, :details
 
   def new_value_for(prop)

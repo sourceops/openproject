@@ -26,9 +26,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 See doc/COPYRIGHT.rdoc for more details.
 
 ++#%>
-<%= render :partial => 'action_menu', locals: { title: Workflow.model_name.human } %>
-<%= render :partial => 'layouts/action_menu_specific' %>
-<%= styled_form_tag({}, :method => 'get') do %>
+<% html_title l(:label_administration), l(:label_workflow_plural) -%>
+<%= render partial: 'action_menu', locals: { title: Workflow.model_name.human } %>
+<%= render partial: 'layouts/action_menu_specific' %>
+<%= styled_form_tag({}, method: 'get') do %>
   <fieldset class="simple-filters--container">
     <legend><%=l(:text_workflow_edit)%></legend>
     <ul class="simple-filters--filters">
@@ -37,49 +38,54 @@ See doc/COPYRIGHT.rdoc for more details.
         <div class="simple-filters--filter-value">
           <%= styled_select_tag 'role_id', options_from_collection_for_select(@roles, "id", "name", @role && @role.id) %>
         </div>
-        <div class="form--field -trailing-label">
-          <%= hidden_field_tag 'used_statuses_only', '0', id: 'used_statuses_only_hidden' %>
-
-          <%= styled_label_tag :used_statuses_only, l(:label_display_used_statuses_only) %>
-          <div class="form--field-container">
-            <%= styled_check_box_tag :used_statuses_only, '1', @used_statuses_only %>
-          </div>
-        </div>
       </li>
       <li class="simple-filters--filter">
         <%= styled_label_tag :type_id, Type.model_name.human, class: 'simple-filters--filter-name' %>
-        <div class="simple-filter--filter-value">
+        <div class="simple-filters--filter-value">
           <%= styled_select_tag 'type_id', options_from_collection_for_select(@types, "id", "name", @type && @type.id) %>
         </div>
       </li>
+      <li class="simple-filters--controls">
+        <%= submit_tag l(:button_edit), name: nil, accesskey: accesskey(:edit), class: 'button -highlight' %>
+      </li>
     </ul>
-    <%= submit_tag l(:button_edit), :name => nil, :accesskey => accesskey(:edit), class: 'button -highlight' %>
+    <ul class="simple-filter--trailing-labels">
+      <li class="form--field -trailing-label">
+        <%= hidden_field_tag 'used_statuses_only', '0', id: 'used_statuses_only_hidden' %>
+
+        <%= styled_label_tag :used_statuses_only, l(:label_display_used_statuses_only) %>
+        <span class="form--field-container">
+          <%= styled_check_box_tag :used_statuses_only, '1', @used_statuses_only %>
+        </span>
+      </li>
+    </ul>
   </fieldset>
 <% end %>
-<%# TODO: remove the prototype stuff from the DOM -%>
 <% if @type && @role && @statuses.any? %>
-  <%= form_tag({}, :id => 'workflow_form' ) do %>
-    <%= hidden_field_tag 'type_id', @type.id %>
-    <%= hidden_field_tag 'role_id', @role.id %>
-    <%= render :partial => 'form', :locals => {:name => 'always', :workflows => @workflows['always']} %>
+    <%= form_tag({}, id: 'workflow_form' ) do %>
+      <%= hidden_field_tag 'type_id', @type.id %>
+      <%= hidden_field_tag 'role_id', @role.id %>
 
-    <fieldset class="form--fieldset -collapsible" style="margin-top: 0.5em;">
-      <legend class="form--fieldset-legend" onclick="toggleFieldset(this);"><a href="javascript:"><%= l(:label_additional_workflow_transitions_for_author) %></a></legend>
-      <div id="author_workflows" style="margin: 0.5em 0 0.5em 0;">
-        <%= render :partial => 'form', :locals => {:name => 'author', :workflows => @workflows['author']} %>
-      </div>
-    </fieldset>
-    <%= javascript_tag "hideFieldset($('author_workflows'))" unless @workflows['author'].present? %>
+      <%= render partial: 'form',
+                 locals: { name: 'always', workflows: @workflows['always'] } %>
 
-    <fieldset class="form--fieldset -collapsible">
-      <legend class="form--fieldset-legend" onclick="toggleFieldset(this);"><a href="javascript:"><%= l(:label_additional_workflow_transitions_for_assignee) %></a></legend>
-      <div id="assignee_workflows" style="margin: 0.5em 0 0.5em 0;">
-        <%= render :partial => 'form', :locals => {:name => 'assignee', :workflows => @workflows['assignee']} %>
-      </div>
-    </fieldset>
-    <%= javascript_tag "hideFieldset($('assignee_workflows'))" unless @workflows['assignee'].present? %>
-    <%= styled_button_tag l(:button_save), class: '-highlight -with-icon icon-yes' %>
-  <% end %>
+      <% author_expanded = @workflows['author'].present? ? 'true' : '' %>
+      <% assignee_expanded = @workflows['assignee'].present? ? 'true' : '' %>
+       
+      <collapsible-section initially-expanded="<%= author_expanded %>"
+                           id="author_workflows"
+                           section-title="<%= t(:label_additional_workflow_transitions_for_author) %>">
+        <%= render partial: 'form', locals: { name: 'author', workflows: @workflows['author'] } %>
+      </collapsible-section>
+
+      <collapsible-section initially-expanded="<%= assignee_expanded %>"
+                           id="assignee_workflows"
+                           section-title="<%= t(:label_additional_workflow_transitions_for_assignee) %>">
+        <%= render partial: 'form', locals: { name: 'assignee', workflows: @workflows['assignee'] } %>
+      </collapsible-section>
+
+      <%= styled_button_tag l(:button_save), class: '-highlight -with-icon icon-checkmark' %>
+    <% end %>
 <% end %>
 
 <% html_title(Workflow.model_name.human) -%>

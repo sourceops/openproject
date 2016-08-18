@@ -28,8 +28,6 @@
 #++
 
 class Reporting < ActiveRecord::Base
-  unloadable
-
   self.table_name = 'reportings'
 
   belongs_to :project
@@ -38,9 +36,6 @@ class Reporting < ActiveRecord::Base
 
   belongs_to :reported_project_status, class_name:  'ReportedProjectStatus',
                                        foreign_key: 'reported_project_status_id'
-
-  attr_accessible :reported_project_status_comment,
-                  :reported_project_status_id
 
   validates_presence_of :project, :reporting_to_project
 

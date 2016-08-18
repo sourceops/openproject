@@ -31,23 +31,32 @@ module.exports = function(WorkPackageFieldService, $window, $timeout) {
   // specifies unhideable (during creation)
   var unhideableFields = [
     'subject',
-    'type',
-    'status',
-    'description',
-    'priority',
-    'assignee',
-    'percentageDone'
+    'description'
   ];
   var firstTimeFocused = false;
   var isGroupHideable = function (groupedFields, groupName, workPackage, cb) {
         if (!workPackage) {
           return true;
         }
+
+        if (groupName === 'details') {
+          return false; // never hide details to keep show all button arround
+        }
+
         var group = _.find(groupedFields, {groupName: groupName});
         var isHideable = typeof cb === 'undefined' ? isFieldHideable : cb;
-        return _.every(group.attributes, function(field) {
+        return group.attributes.length === 0 || _.every(group.attributes, function(field) {
           return isHideable(workPackage, field);
         });
+      },
+      isGroupEmpty = function (groupedFields, groupName) {
+        var group = _.find(groupedFields, {groupName: groupName});
+
+        return group.attributes.length === 0;
+      },
+      shouldHideGroup = function(hideEmptyActive, groupedFields, groupName, workPackage, cb) {
+        return hideEmptyActive && isGroupHideable(groupedFields, groupName, workPackage, cb) ||
+          !hideEmptyActive && isGroupEmpty(groupedFields, groupName);
       },
       isFieldHideable = function (workPackage, field) {
         if (!workPackage) {
@@ -55,27 +64,10 @@ module.exports = function(WorkPackageFieldService, $window, $timeout) {
         }
         return WorkPackageFieldService.isHideable(workPackage, field);
       },
-      isFieldHideableOnCreate = function(workPackage, field) {
-        if (!workPackage) {
-          return true;
-        }
-        if (!isSpecified(workPackage, field)) {
-          return true;
-        }
+      shouldHideField = function(workPackage, field, hideEmptyFields) {
+        var hidden = WorkPackageFieldService.getVisibility(workPackage, field) === 'hidden';
 
-        if (!isEditable(workPackage, field)) {
-          return true;
-        }
-
-        if (_.contains(unhideableFields, field)) {
-          return !WorkPackageFieldService.isEditable(workPackage, field);
-        }
-
-        if (WorkPackageFieldService.isRequired(workPackage, field)) {
-          return false;
-        }
-
-        return WorkPackageFieldService.isHideable(workPackage, field);
+        return isFieldHideable(workPackage, field) && (hideEmptyFields || hidden);
       },
       isSpecified = function (workPackage, field) {
         if (!workPackage) {
@@ -116,8 +108,10 @@ module.exports = function(WorkPackageFieldService, $window, $timeout) {
 
   return {
     isGroupHideable: isGroupHideable,
+    isGroupEmpty: isGroupEmpty,
+    shouldHideGroup: shouldHideGroup,
     isFieldHideable: isFieldHideable,
-    isFieldHideableOnCreate: isFieldHideableOnCreate,
+    shouldHideField: shouldHideField,
     isSpecified: isSpecified,
     isEditable: isEditable,
     hasNiceStar: hasNiceStar,

@@ -32,6 +32,8 @@ Feature: Updating work packages
       | login     | manager |
       | firstname | the     |
       | lastname  | manager |
+    And the user "manager" has the following preferences
+      | warn_on_leaving_unsaved | false |
     And there are the following types:
       | Name   | Is milestone |
       | Phase1 | false        |
@@ -68,62 +70,22 @@ Feature: Updating work packages
     And the type "Phase2" has the default workflow for the role "manager"
     And there are the following work packages in project "ecookbook":
       | subject | type    | status  | fixed_version |
-      | pe1     | Phase1  | status1 | version1      |
-      | pe2     |         |         |               |
+      | wp1     | Phase1  | status1 | version1      |
     And I am already logged in as "manager"
 
   @javascript
-  Scenario: Updating the work package and seeing the results on the show page
-    When I go to the edit page of the work package called "pe1"
-    And I fill in the following:
-      | Type           | Phase2      |
-    # This is to be removed once the bug
-    # that clears the inserted/selected values
-    # after a type refresh is fixed.
-    And I wait for the AJAX requests to finish
-    And I fill in the following:
-      | Responsible    | the manager |
-      | Assignee       | the manager |
-      | Start date     | 2013-03-04  |
-      | Due date       | 2013-03-06  |
-      | Estimated time | 5.00        |
-      | % done         | 30 %        |
-      | Priority       | prio2       |
-      | Status         | status2     |
-      | Subject        | New subject |
-      | Description    | Desc2       |
-    And I fill in the id of work package "pe2" into "Parent"
-    And I submit the form by the "Submit" button
-
-    Then I should be on the page of the work package "New subject"
-    And the work package should be shown with the following values:
-      | Responsible    | the manager |
-      | Assignee       | the manager |
-      | Start date     | 03/04/2013  |
-      | Due date       | 03/06/2013  |
-      | Estimated time | 5.00        |
-      | % done         | 30          |
-      | Priority       | prio2       |
-      | Status         | status2     |
-      | Subject        | New subject |
-      | Type           | Phase2      |
-      | Description    | Desc2       |
-    And the work package "pe2" should be shown as the parent
-
-  Scenario: Concurrent updates to work packages
-    When I go to the edit page of the work package called "pe1"
-    And I fill in the following:
-      | Start date     | 03-04-2013   |
-    And the work_package "pe1" is updated with the following:
-      | Start date | 04-04-2013 |
-    And I submit the form by the "Submit" button
-    Then I should see "Information has been updated by at least one other user in the meantime."
-    And I should see "The update(s) came from"
-
-  Scenario: Adding a note
-    When I go to the edit page of the work package called "pe1"
-     And I fill in "Notes" with "Note message"
-     And I submit the form by the "Submit" button
-    Then I should be on the page of the work package "pe1"
-     And I should see a journal with the following:
-      | Notes | Note message |
+  Scenario: On a work package with children a user should not be able to change attributes which are overridden by children
+    And there are the following work packages in project "ecookbook":
+      | subject | type   | status  | fixed_version | priority | done_ratio | estimated_hours | start_date | due_date   |
+      | child   | Phase1 | status1 | version1      | prio2    | 50         | 5               | 2015-10-01 | 2015-10-30 |
+      | parent  |        |         |               |          | 0          |                 |            |            |
+    Given the work package "parent" has the following children:
+      | child |
+    When I go to the edit page of the work package "parent"
+    And I click the edit work package button
+    Then the work package should be shown with the following values:
+      | Subject        | parent                   |
+    And there should not be a "Progress \(%\)" field
+    And there should not be a "Start date" field
+    And there should not be a "End date" field
+    And there should not be a "Estimated time" field

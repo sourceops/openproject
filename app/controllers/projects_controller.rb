@@ -36,7 +36,9 @@ class ProjectsController < ApplicationController
 
   before_filter :disable_api
   before_filter :find_project, except: [:index, :level_list, :new, :create]
-  before_filter :authorize, only: [:show, :settings, :edit, :update, :modules, :types]
+  before_filter :authorize, only: [
+    :show, :settings, :edit, :update, :modules, :types, :custom_fields
+  ]
   before_filter :authorize_global, only: [:new, :create]
   before_filter :require_admin, only: [:archive, :unarchive, :destroy, :destroy_info]
   before_filter :jump_to_project_menu_item, only: :show
@@ -60,43 +62,52 @@ class ProjectsController < ApplicationController
   # Lists visible projects
   def index
     respond_to do |format|
-      format.html {
-        @projects = Project.visible.find(:all, order: 'lft')
-      }
-      format.atom {
-        projects = Project.visible.find(:all, order: 'created_on DESC',
-                                              limit: Setting.feeds_limit.to_i)
+      format.html do
+        @projects = Project.visible.order('lft')
+      end
+      format.atom do
+        projects = Project.visible
+                   .order('created_on DESC')
+                   .limit(Setting.feeds_limit.to_i)
         render_feed(projects, title: "#{Setting.app_title}: #{l(:label_project_latest)}")
-      }
+      end
     end
   end
 
+  current_menu_item :index do
+    :list_projects
+  end
+
   def new
-    @issue_custom_fields = WorkPackageCustomField.find(:all, order: "#{CustomField.table_name}.position")
-    @types = Type.all
+    @issue_custom_fields = WorkPackageCustomField.order("#{CustomField.table_name}.position")
+    @types = ::Type.all
     @project = Project.new
     @project.parent = Project.find(params[:parent_id]) if params[:parent_id]
-    @project.safe_attributes = params[:project]
+    @project.attributes = permitted_params.project if params[:project].present?
+  end
+
+  current_menu_item :new do
+    :new_project
   end
 
   def create
-    @issue_custom_fields = WorkPackageCustomField.find(:all, order: "#{CustomField.table_name}.position")
-    @types = Type.all
+    @issue_custom_fields = WorkPackageCustomField.order("#{CustomField.table_name}.position")
+    @types = ::Type.all
     @project = Project.new
-    @project.safe_attributes = params[:project]
+    @project.attributes = permitted_params.project
 
     if validate_parent_id && @project.save
-      @project.set_allowed_parent!(params[:project]['parent_id']) if params[:project].has_key?('parent_id')
+      @project.set_allowed_parent!(params['project']['parent_id']) if params['project'].has_key?('parent_id')
       add_current_user_to_project_if_not_admin(@project)
       respond_to do |format|
-        format.html {
+        format.html do
           flash[:notice] = l(:notice_successful_create)
-          redirect_to controller: '/projects', action: 'settings', id: @project
-        }
+          redirect_work_packages_or_overview
+        end
       end
     else
       respond_to do |format|
-        format.html { render action: 'new' }
+        format.html do render action: 'new' end
       end
     end
   end
@@ -104,18 +115,22 @@ class ProjectsController < ApplicationController
   # Show @project
   def show
     @users_by_role = @project.users_by_role
-    @subprojects = @project.children.visible.all
-    @news = @project.news.find(:all, limit: 5, include: [:author, :project], order: "#{News.table_name}.created_on DESC")
+    @subprojects = @project.children.visible
+    @news = @project.news.limit(5).includes(:author, :project).order("#{News.table_name}.created_on DESC")
     @types = @project.rolled_up_types
 
     cond = @project.project_condition(Setting.display_subprojects_work_packages?)
 
-    @open_issues_by_type = WorkPackage.visible.count(group: :type,
-                                                     include: [:project, :status, :type],
-                                                     conditions: ["(#{cond}) AND #{Status.table_name}.is_closed=?", false])
-    @total_issues_by_type = WorkPackage.visible.count(group: :type,
-                                                      include: [:project, :status, :type],
-                                                      conditions: cond)
+    @open_issues_by_type = WorkPackage.visible.group(:type)
+                           .includes(:project, :status, :type)
+                           .where(["(#{cond}) AND #{Status.table_name}.is_closed=?", false])
+                           .references(:projects, :statuses, :types)
+                           .count
+    @total_issues_by_type = WorkPackage.visible.group(:type)
+                            .includes(:project, :status, :type)
+                            .where(cond)
+                            .references(:projects, :statuses, :types)
+                            .count
 
     respond_to do |format|
       format.html
@@ -132,55 +147,78 @@ class ProjectsController < ApplicationController
   def update
     @altered_project = Project.find(@project.id)
 
-    @altered_project.safe_attributes = params[:project]
+    @altered_project.attributes = permitted_params.project
     if validate_parent_id && @altered_project.save
-      if params[:project].has_key?('parent_id')
-        @altered_project.set_allowed_parent!(params[:project]['parent_id'])
+      if params['project'].has_key?('parent_id')
+        @altered_project.set_allowed_parent!(params['project']['parent_id'])
       end
       respond_to do |format|
-        format.html {
+        format.html do
           flash[:notice] = l(:notice_successful_update)
           redirect_to action: 'settings', id: @altered_project
-        }
+        end
       end
+      OpenProject::Notifications.send('project_updated', project: @altered_project)
     else
       respond_to do |format|
-        format.html {
+        format.html do
           load_project_settings
           render action: 'settings'
-        }
+        end
       end
     end
   end
 
-  def types
-    flash[:notice] = []
+  def update_identifier
+    @project.attributes = permitted_params.project
 
-    unless params.has_key? :project
-      params[:project] = { 'type_ids' => [Type.standard_type.id] }
-      flash[:notice] << l(:notice_automatic_set_of_standard_type)
-    end
-
-    params[:project].assert_valid_keys('type_ids')
-
-    selected_type_ids = params[:project][:type_ids].map(&:to_i)
-
-    if types_missing?(selected_type_ids)
-      flash.delete :notice
-      flash[:error] = I18n.t(:error_types_in_use_by_work_packages,
-                             types: missing_types(selected_type_ids).map(&:name).join(', '))
-    elsif @project.update_attributes(params[:project])
-      flash[:notice] << l('notice_successful_update')
+    if @project.save
+      respond_to do |format|
+        format.html do
+          flash[:notice] = l(:notice_successful_update)
+          redirect_to action: 'settings', id: @project
+        end
+      end
+      OpenProject::Notifications.send('project_renamed', project: @project)
     else
-      flash[:error] = l('timelines.cannot_update_planning_element_types')
+      respond_to do |format|
+        format.html do
+          load_project_settings
+          render action: 'identifier'
+        end
+      end
     end
-    redirect_to action: 'settings', tab: 'types'
+  end
+
+
+  def types
+    if UpdateProjectsTypesService.new(@project).call(permitted_params.projects_type_ids)
+      flash[:notice] = l('notice_successful_update')
+    else
+      flash[:error] = @project.errors.full_messages
+    end
+
+    redirect_to settings_project_path(@project.identifier, tab: 'types')
   end
 
   def modules
-    @project.enabled_module_names = params[:project][:enabled_module_names]
+    @project.enabled_module_names = permitted_params.project[:enabled_module_names]
     flash[:notice] = l(:notice_successful_update)
     redirect_to action: 'settings', id: @project, tab: 'modules'
+  end
+
+  def custom_fields
+    Project.transaction do
+      @project.work_package_custom_field_ids = permitted_params.project[:work_package_custom_field_ids]
+      if @project.save
+        flash[:notice] = l(:notice_successful_update)
+      else
+        flash[:error] = l(:notice_project_cannot_update_custom_fields,
+                          errors: @project.errors.full_messages.join(', '))
+        raise ActiveRecord::Rollback
+      end
+    end
+    redirect_to action: 'settings', id: @project, tab: 'custom_fields'
   end
 
   def archive
@@ -197,15 +235,13 @@ class ProjectsController < ApplicationController
   def destroy
     @project_to_destroy = @project
 
-    if params[:confirm]
-      @project_to_destroy.destroy
-      respond_to do |format|
-        format.html { redirect_to controller: '/admin', action: 'projects' }
+    OpenProject::Notifications.send('project_deletion_imminent', project: @project_to_destroy)
+    @project_to_destroy.destroy
+    respond_to do |format|
+      format.html do
+        flash[:notice] = l(:notice_successful_delete)
+        redirect_to controller: '/admin', action: 'projects'
       end
-    else
-      flash[:error] = l(:notice_project_not_deleted)
-      redirect_to confirm_destroy_project_path(@project)
-      return
     end
 
     hide_project_in_layout
@@ -227,6 +263,12 @@ class ProjectsController < ApplicationController
     render_404
   end
 
+  def redirect_work_packages_or_overview
+    return if redirect_to_project_menu_item(@project, :work_packages)
+
+    redirect_to controller: '/projects', action: 'show', id: @project
+  end
+
   def jump_to_project_menu_item
     if params[:jump]
       # try to redirect to the requested menu item
@@ -235,10 +277,10 @@ class ProjectsController < ApplicationController
   end
 
   def load_project_settings
-    @issue_custom_fields = WorkPackageCustomField.find(:all, order: "#{CustomField.table_name}.position")
+    @issue_custom_fields = WorkPackageCustomField.order("#{CustomField.table_name}.position")
     @category ||= Category.new
     @member ||= @project.members.new
-    @types = Type.all
+    @types = ::Type.all
     @repository ||= @project.repository
     @wiki ||= @project.wiki
   end
@@ -249,7 +291,7 @@ class ProjectsController < ApplicationController
 
   def add_current_user_to_project_if_not_admin(project)
     unless User.current.admin?
-      r = Role.givable.find_by_id(Setting.new_project_user_role_id.to_i) || Role.givable.first
+      r = Role.givable.find_by(id: Setting.new_project_user_role_id.to_i) || Role.givable.first
       m = Member.new do |member|
         member.user = User.current
         member.role_ids = [r].map(&:id) # member.roles = [r] fails, this works
@@ -268,27 +310,13 @@ class ProjectsController < ApplicationController
     end
   end
 
-  def types_missing?(selected_type_ids)
-    !missing_types(selected_type_ids).empty?
-  end
-
-  def missing_types(selected_type_ids)
-    types_used_by_work_packages.select { |t| !selected_type_ids.include?(t.id) }
-  end
-
-  def types_used_by_work_packages
-    @types_used_by_work_packages ||= Type.find_all_by_id(WorkPackage.where(project_id: @project.id)
-                                                                    .select(:type_id)
-                                                                    .uniq)
-  end
-
   # Validates parent_id param according to user's permissions
   # TODO: move it to Project model in a validation that depends on User.current
   def validate_parent_id
     return true if User.current.admin?
-    parent_id = params[:project] && params[:project][:parent_id]
+    parent_id = permitted_params.project && params[:project][:parent_id]
     if parent_id || @project.new_record?
-      parent = parent_id.blank? ? nil : Project.find_by_id(parent_id.to_i)
+      parent = parent_id.blank? ? nil : Project.find_by(id: parent_id.to_i)
       unless @project.allowed_parents.include?(parent)
         @project.errors.add :parent_id, :invalid
         return false

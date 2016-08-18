@@ -75,18 +75,31 @@ describe WorkPackage, type: :model do
       describe 'invalid custom field values' do
         context 'short error message' do
           shared_examples_for 'custom field with invalid value' do
+            let(:custom_field_key) { "custom_field_#{custom_field.id}".to_sym }
+
             before do
               change_custom_field_value(work_package, custom_field_value)
             end
 
             describe 'error message' do
-              before { work_package.save }
+              before do work_package.save end
 
-              subject { work_package.errors["custom_field_#{custom_field.id}"] }
+              subject { work_package.errors[custom_field_key] }
 
               it {
                 is_expected.to include(I18n.translate("activerecord.errors.messages.#{error_key}"))
               }
+            end
+
+            describe 'symbols_for' do
+              before do
+                work_package.save
+              end
+
+              it 'stores the symbol' do
+                actual_symbols = work_package.errors.symbols_for(custom_field_key)
+                expect(actual_symbols).to match_array([error_key.to_sym])
+              end
             end
 
             describe 'work package attribute update' do
@@ -122,16 +135,18 @@ describe WorkPackage, type: :model do
         end
 
         context 'full error message' do
-          before { change_custom_field_value(work_package, 'SQLServer') }
+          before do change_custom_field_value(work_package, 'SQLServer') end
 
           subject { work_package.errors.full_messages.first }
 
-          it { is_expected.to eq("Database #{I18n.t('activerecord.errors.messages.inclusion')}") }
+          it 'matches' do
+            is_expected.to eq("Database #{I18n.t('activerecord.errors.messages.inclusion')}")
+          end
         end
       end
 
       describe 'valid value given' do
-        before { change_custom_field_value(work_package, 'PostgreSQL') }
+        before do change_custom_field_value(work_package, 'PostgreSQL') end
 
         context 'errors' do
           subject { work_package.errors[:custom_values] }
@@ -213,7 +228,7 @@ describe WorkPackage, type: :model do
         end
 
         context 'with assigning type' do
-          before { work_package_without_type.type = type_feature }
+          before do work_package_without_type.type = type_feature end
 
           subject { work_package_without_type.custom_field_values }
 
@@ -231,7 +246,7 @@ describe WorkPackage, type: :model do
 
         subject do
           wp = WorkPackage.new.tap do |i|
-            i.force_attributes = { project: project }
+            i.attributes = { project: project }
           end
           wp.attributes = attribute_hash
 
@@ -257,7 +272,7 @@ describe WorkPackage, type: :model do
 
       describe 'value' do
         let(:relevant_journal) {
-          work_package.journals.select { |j| j.customizable_journals.size > 0 }.first
+          work_package.journals.find { |j| j.customizable_journals.size > 0 }
         }
         subject { relevant_journal.customizable_journals.first.value }
 
@@ -266,6 +281,29 @@ describe WorkPackage, type: :model do
         end
 
         it { is_expected.to eq(value) }
+      end
+    end
+
+    describe 'validation error interpolation' do
+      let :custom_field do
+        FactoryGirl.create :work_package_custom_field,
+                           name: 'PIN',
+                           field_format: 'text',
+                           max_length: 4,
+                           is_required: true
+      end
+
+      include_context 'project with required custom field'
+
+      it 'works for the max length validation' do
+        work_package.custom_field_values.first.value = '12345'
+
+        # don't want to see I18n::MissingInterpolationArgument specifically
+        expect { work_package.valid? }.not_to raise_error
+        expect(work_package.valid?).to be_falsey
+
+        expect(work_package.errors.full_messages.first)
+          .to eq ('PIN is too long (maximum is 4 characters).')
       end
     end
   end

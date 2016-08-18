@@ -31,13 +31,13 @@
 # This concern provides a general implementation of preview functionality      #
 # found in different controllers.                                              #
 #                                                                              #
-# Nevertheless, this concern expects the controller to implement the function  #
+# This concern expects the controller to implement the function  #
 # #parse_preview_data. #parse_preview_data must return a list of (wiki) texts, #
 # attachments required to render the texts, and the object. Attachments and    #
-# object may be nil.                                                           #
+# object can be nil.                                                           #
 #                                                                              #
-# You may use #parse_preview_data_helper to implement #parse_preview_data.     #
-# Then, a minimal implementation of #parse_preview_data may looks as follows:  #
+# You can use #parse_preview_data_helper to implement #parse_preview_data.     #
+# Then, a minimal implementation of #parse_preview_data is as follows:  #
 #                                                                              #
 # def parse_preview_data                                                       #
 #   parse_preview_data_helper :work_packages, [:description, :notes]           #
@@ -45,12 +45,12 @@
 #                                                                              #
 # The first parameter 'param_name' specifies the key in the params object that #
 # contains the values. The second parameter 'attributes' specifies the value   #
-# keys. Optionally, if 'param_name' is not equivalent to a class name, you     #
+# keys. If 'param_name' is not equivalent to a class name, you     #
 # can pass the objects class as third parameter.                               #
 #                                                                              #
 # For object identification #parse_preview_data_helper uses the params         #
 # object's 'id' key, if available. If 'id' needs some preprocessing or is not  #
-# the id to the object instance, you may override #parse_preview_id to provide #
+# the id to the object instance, you can override #parse_preview_id to provide #
 # a different id.                                                              #
 ################################################################################
 module OpenProject::Concerns::Preview
@@ -72,8 +72,7 @@ module OpenProject::Concerns::Preview
     klass ||= param_name.to_s.classify.constantize
 
     texts = Array(attributes).each_with_object({}) do |attribute, list|
-      caption = (attribute == :notes) ? Journal.human_attribute_name(:notes)
-                                      : klass.human_attribute_name(attribute)
+      caption = (attribute == :notes) ? Journal.human_attribute_name(:notes) : klass.human_attribute_name(attribute)
       text = params[param_name][attribute]
       list[caption] = text
     end
@@ -89,7 +88,7 @@ module OpenProject::Concerns::Preview
 
   def parse_previewed_object(klass)
     id = parse_previewed_id
-    id ? klass.find_by_id(id) : nil
+    id ? klass.find_by(id: id) : nil
   end
 
   def parse_previewed_id

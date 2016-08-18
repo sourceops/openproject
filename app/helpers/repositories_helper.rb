@@ -28,6 +28,10 @@
 #++
 
 module RepositoriesHelper
+  def settings_repository_tab_path
+    settings_project_path(@project, tab: 'repository')
+  end
+
   def format_revision(revision)
     if revision.respond_to? :format_identifier
       revision.format_identifier
@@ -53,21 +57,21 @@ module RepositoriesHelper
   end
 
   def render_changeset_changes
-    changes = @changeset.changes.find(:all, limit: 1000, order: 'path').map do |change|
+    changes = @changeset.file_changes.limit(1000).order('path').map { |change|
       case change.action
       when 'A'
         # Detects moved/copied files
         if !change.from_path.blank?
-          action = @changeset.changes.detect { |c| c.action == 'D' && c.path == change.from_path }
+          action = @changeset.file_changes.detect { |c| c.action == 'D' && c.path == change.from_path }
           change.action = action ? 'R' : 'C'
         end
         change
       when 'D'
-        @changeset.changes.detect { |c| c.from_path == change.path } ? nil : change
+        @changeset.file_changes.detect { |c| c.from_path == change.path } ? nil : change
       else
         change
       end
-    end.compact
+    }.compact
 
     tree = {}
     changes.each do |change|
@@ -87,6 +91,27 @@ module RepositoriesHelper
     render_changes_tree(tree[:s])
   end
 
+  # Mapping from internal action to (folder|file)-icon type
+  def change_action_mapping
+    {
+      'A' => :add,
+      'B' => :remove
+    }
+  end
+
+  # This calculates whether a folder was added, deleted or modified. It is based on the assumption that
+  # a folder was added/deleted when all content was added/deleted since the folder changes were not tracked.
+  def calculate_folder_action(tree)
+    seen = Set.new
+    tree.each do |_, entry|
+      if folderStyle = change_action_mapping[entry[:c].try(:action)]
+        seen << folderStyle
+      end
+    end
+
+    seen.size == 1 ? seen.first : :open
+  end
+
   def render_changes_tree(tree)
     return '' if tree.nil?
 
@@ -99,22 +124,37 @@ module RepositoriesHelper
         style << ' folder'
         path_param = without_leading_slash(to_path_param(@repository.relative_path(file)))
         text = link_to(h(text),
-                       controller: '/repositories',
-                       action: 'show',
-                       project_id: @project,
-                       path: path_param,
-                       rev: @changeset.identifier)
-        output << "<li class='#{style}'>#{text}</li>"
+                       { controller: '/repositories',
+                         action: 'show',
+                         project_id: @project,
+                         path: path_param,
+                         rev: @changeset.identifier },
+                       title: l(:label_folder))
+
+        output << "<li class='#{style} icon icon-folder-#{calculate_folder_action(s)}'>#{text}</li>"
         output << render_changes_tree(s)
       elsif c = tree[file][:c]
         style << " change-#{c.action}"
         path_param = without_leading_slash(to_path_param(@repository.relative_path(c.path)))
+        case c.action
+        when 'A'
+          title_text =  l(:label_added)
+        when 'D'
+          title_text =  l(:label_deleted)
+        when 'C'
+          title_text =  l(:label_copied)
+        when 'R'
+          title_text =  l(:label_renamed)
+        else
+          title_text =  l(:label_modified)
+        end
         text = link_to(h(text),
-                       controller: '/repositories',
-                       action: 'entry',
-                       project_id: @project,
-                       path: path_param,
-                       rev: @changeset.identifier) unless c.action == 'D'
+                       { controller: '/repositories',
+                         action: 'entry',
+                         project_id: @project,
+                         path: path_param,
+                         rev: @changeset.identifier },
+                       title: title_text) unless c.action == 'D'
         text << raw(" - #{h(c.revision)}") unless c.revision.blank?
         text << raw(' (' + link_to(l(:label_diff),
                                    controller: '/repositories',
@@ -123,7 +163,23 @@ module RepositoriesHelper
                                    path: path_param,
                                    rev: @changeset.identifier) + ') ') if c.action == 'M'
         text << raw(' ' + content_tag('span', h(c.from_path), class: 'copied-from')) unless c.from_path.blank?
-        output << "<li class='#{style}'>#{text}</li>"
+        case c.action
+        when 'A'
+          output << "<li class='#{style} icon icon-add'
+                         title='#{l(:label_added)}'>#{text}</li>"
+        when 'D'
+          output << "<li class='#{style} icon icon-delete'
+                         title='#{l(:label_deleted)}'>#{text}</li>"
+        when 'C'
+          output << "<li class='#{style} icon icon-copy'
+                         title='#{l(:label_copied)}'>#{text}</li>"
+        when 'R'
+          output << "<li class='#{style} icon icon-rename'
+                         title='#{l(:label_renamed)}'>#{text}</li>"
+        else
+          output << "<li class='#{style} icon icon-arrow-left-right'
+                         title='#{l(:label_modified)}'>#{text}</li>"
+        end
       end
     end
     output << '</ul>'
@@ -173,7 +229,7 @@ module RepositoriesHelper
     else
       # removes invalid UTF8 sequences
       begin
-        (str + '  ').encode("UTF-8", invalid: :replace, undef: :replace, replace: "?")[0..-3]
+        (str + '  ').encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')[0..-3]
       rescue Encoding::InvalidByteSequenceError, Encoding::UndefinedConversionError
       end
     end
@@ -185,15 +241,17 @@ module RepositoriesHelper
   # and injects an already persisted repository for correctly
   # displaying an existing repository.
   def scm_options(repository = nil)
-    scms = OpenProject::Scm::Manager.enabled
-    vendor = repository.nil? ? nil : repository.vendor
+    options = []
+    OpenProject::Scm::Manager.enabled.each do |vendor, klass|
+      # Skip repositories that were configured to have no
+      # available types left.
+      next if klass.available_types.empty?
 
-    if vendor && !repository.new_record?
-      scms[vendor] = vendor
+      options << [klass.vendor_name, vendor]
     end
 
-    scms = [default_selected_option] + scms.keys
-    options_for_select(scms, vendor)
+    existing_vendor = repository.nil? ? nil : repository.vendor
+    options_for_select([default_selected_option] + options, existing_vendor)
   end
 
   def default_selected_option
@@ -202,10 +260,6 @@ module RepositoriesHelper
       '',
       { disabled: true, selected: true }
     ]
-  end
-
-  def vendor_name(repository)
-    repository.vendor.underscore
   end
 
   def scm_vendor_tag(repository)
@@ -219,6 +273,11 @@ module RepositoriesHelper
                },
                disabled: (repository && !repository.new_record?)
               )
+  end
+
+  def git_path_encoding_options(repository)
+    default = repository.new_record? ? 'UTF-8' : repository.path_encoding
+    options_for_select(Setting::ENCODINGS, default)
   end
 
   ##

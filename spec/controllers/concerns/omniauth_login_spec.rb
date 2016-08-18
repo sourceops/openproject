@@ -73,8 +73,7 @@ describe AccountController, type: :controller do
         end
 
         it 'redirects to the first login page with a back_url' do
-          expect(response).to redirect_to(
-            my_first_login_path(back_url: 'https://example.net/some_back_url'))
+          expect(response).to redirect_to(home_url(first_time_user: true))
         end
       end
 
@@ -125,7 +124,6 @@ describe AccountController, type: :controller do
 
         context 'unavailable' do
           it 'keeps the default mapping' do
-
             post :omniauth_login
 
             user = User.find_by_login('whattheheck@example.com')
@@ -168,7 +166,7 @@ describe AccountController, type: :controller do
                                   firstname: 'Foo',
                                   lastname: 'Smith',
                                   mail: 'foo@bar.com' }
-          expect(response).to redirect_to my_first_login_path
+          expect(response).to redirect_to home_url(first_time_user: true)
 
           user = User.find_by_login('login@bar.com')
           expect(user).to be_an_instance_of(User)
@@ -178,7 +176,6 @@ describe AccountController, type: :controller do
         end
 
         context 'after a timeout expired' do
-
           before do
             session[:auth_source_registration] = omniauth_hash.merge(
               omniauth: true,
@@ -375,7 +372,7 @@ describe AccountController, type: :controller do
 
             it 'is approved against any other provider' do
               expect(OpenProject::OmniAuth::Authorization).to receive(:after_login!) do |u|
-                new_user = User.find_by_identity_url 'some other:123545'
+                new_user = User.find_by identity_url: 'some other:123545'
 
                 expect(u).to eq new_user
               end
@@ -384,7 +381,7 @@ describe AccountController, type: :controller do
 
               post :omniauth_login
 
-              expect(response).to redirect_to my_first_login_path
+              expect(response).to redirect_to home_url(first_time_user: true)
               # authorization is successful which results in the registration
               # of a new user in this case because we changed the provider
               # and there isn't a user with that identity URL yet ...
@@ -406,14 +403,13 @@ describe AccountController, type: :controller do
         end
       end
 
-      context 'with a registered and not activated accout' do
+      context 'with a registered and not activated accout',
+              with_settings: { self_registration: 1 } do
         before do
           user.register
           user.save!
 
-          with_settings(self_registration: '1') do
-            post :omniauth_login
-          end
+          post :omniauth_login
         end
 
         it 'should show an error about a not activated account' do
@@ -425,15 +421,13 @@ describe AccountController, type: :controller do
         end
       end
 
-      context 'with a locked account' do
+      context 'with a locked account',
+              with_settings: { brute_force_block_after_failed_logins: 0 } do
         before do
           user.lock
           user.save!
 
-          # Make sure we don't get a specific message when brute-force protection is enabled
-          with_settings(brute_force_block_after_failed_logins: '0') do
-            post :omniauth_login
-          end
+          post :omniauth_login
         end
 
         it 'should show an error indicating a failed login' do
@@ -444,7 +438,6 @@ describe AccountController, type: :controller do
           expect(response).to redirect_to signin_path
         end
       end
-
     end
 
     describe 'with an invalid auth_hash' do
@@ -498,5 +491,4 @@ describe AccountController, type: :controller do
       expect(result).to eql('developer:veryuniqueid')
     end
   end
-
 end

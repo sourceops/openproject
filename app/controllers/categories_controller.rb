@@ -41,7 +41,7 @@ class CategoriesController < ApplicationController
 
   def create
     @category = @project.categories.build
-    @category.safe_attributes = params[:category]
+    @category.attributes = permitted_params.category
 
     if @category.save
       respond_to do |format|
@@ -55,7 +55,9 @@ class CategoriesController < ApplicationController
       end
     else
       respond_to do |format|
-        format.html { render action: :new }
+        format.html do
+          render action: :new
+        end
         format.js do
           render(:update) { |page| page.alert(@category.errors.full_messages.join('\n')) }
         end
@@ -63,12 +65,8 @@ class CategoriesController < ApplicationController
     end
   end
 
-  def edit
-    @category.safe_attributes = params[:category]
-  end
-
   def update
-    @category.safe_attributes = params[:category]
+    @category.attributes = permitted_params.category
     if @category.save
       flash[:notice] = l(:notice_successful_update)
       redirect_to controller: '/projects', action: 'settings', tab: 'categories', id: @project
@@ -85,7 +83,7 @@ class CategoriesController < ApplicationController
       redirect_to controller: '/projects', action: 'settings', id: @project, tab: 'categories'
       return
     elsif params[:todo]
-      reassign_to = @project.categories.find_by_id(params[:reassign_to_id]) if params[:todo] == 'reassign'
+      reassign_to = @project.categories.find_by(id: params[:reassign_to_id]) if params[:todo] == 'reassign'
       @category.destroy(reassign_to)
       redirect_to controller: '/projects', action: 'settings', id: @project, tab: 'categories'
       return

@@ -81,14 +81,12 @@ describe 'Omniauth authentication', type: :feature do
       fill_in('email', with: user.mail)
       click_link_or_button 'Sign In'
 
-      expect(page).to have_content('omni bob')
+      expect(page).to have_link('omni bob')
       expect(page).to have_link('Sign out')
     end
 
-    context 'with direct login' do
-      before do
-        allow(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('developer')
-      end
+    context 'with direct login',
+            with_config: { omniauth_direct_login_provider: 'developer' } do
 
       it 'should go directly to the developer sign in and then redirect to the back url' do
         url = 'http://www.example.com/my/account'
@@ -106,11 +104,9 @@ describe 'Omniauth authentication', type: :feature do
     end
   end
 
-  describe 'sign out a user with direct login and login required' do
-    before do
-      allow(Setting).to receive(:login_required?).and_return(true)
-      allow(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('developer')
-    end
+  describe 'sign out a user with direct login and login required',
+           with_config: { omniauth_direct_login_provider: 'developer' },
+           with_settings: { login_required?: true } do
 
     it 'shows a notice that the user has been logged out' do
       visit signout_path
@@ -137,7 +133,8 @@ describe 'Omniauth authentication', type: :feature do
 
   shared_examples 'omniauth user registration' do
     it 'should register new user' do
-      visit '/auth/developer'
+      visit '/'
+      find_link('Omniauth Developer').click
 
       # login form developer strategy
       fill_in('first_name', with: user.firstname)
@@ -154,7 +151,13 @@ describe 'Omniauth authentication', type: :feature do
     end
   end
 
-  context 'register on the fly' do
+  context 'register on the fly',
+           with_settings: {
+            self_registration?: true,
+            self_registration: '3',
+            available_languages: [:en]
+           } do
+
     let(:user) do
       User.new(force_password_change: false,
                identity_url: 'developer:omnibob@example.com',
@@ -164,14 +167,9 @@ describe 'Omniauth authentication', type: :feature do
                lastname: 'bob')
     end
 
-    before do
-      allow(Setting).to receive(:self_registration?).and_return(true)
-      allow(Setting).to receive(:self_registration).and_return('3')
-    end
-
     it_behaves_like 'omniauth user registration'
 
-    it 'should redirect to back url' do
+    it 'should redirect to homesceen' do
       visit account_lost_password_path
       find_link('Omniauth Developer').click
 
@@ -185,26 +183,21 @@ describe 'Omniauth authentication', type: :feature do
       fill_in('user_lastname', with: user.lastname)
       click_link_or_button 'Submit'
 
-      # now, we see the my/first_login page and just save
-      click_link_or_button 'Save'
-
-      expect(current_url).to eql account_lost_password_url
+      expect(current_url).to eql home_url(first_time_user: true)
     end
 
-    context 'with password login disabled' do
-      before do
-        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(true)
-      end
+    context 'with password login disabled',
+            with_config: { disabled_password_login: 'true' } do
 
       it_behaves_like 'omniauth user registration'
     end
   end
 
-  context 'registration by email' do
-    before do
-      allow(Setting).to receive(:self_registration?).and_return(true)
-      allow(Setting).to receive(:self_registration).and_return('1')
-    end
+  context 'registration by email',
+          with_settings: {
+            self_registration?: true,
+            self_registration: '1'
+          } do
 
     shared_examples 'registration with registration by email' do
       it 'shows a note explaining that the account has to be activated' do
@@ -229,10 +222,11 @@ describe 'Omniauth authentication', type: :feature do
       let(:login_path) { '/auth/developer' }
     end
 
-    context 'with direct login enabled and login required' do
+    context 'with direct login enabled and login required',
+            with_config: { omniauth_direct_login_provider: 'developer' } do
+
       before do
         allow(Setting).to receive(:login_required?).and_return(true)
-        allow(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('developer')
       end
 
       it_behaves_like 'registration with registration by email' do
@@ -265,10 +259,11 @@ describe 'Omniauth authentication', type: :feature do
       let(:login_path) { '/auth/developer' }
     end
 
-    context 'with direct login and login required' do
+    context 'with direct login and login required',
+            with_config: { omniauth_direct_login_provider: 'developer' } do
+
       before do
         allow(Setting).to receive(:login_required?).and_return(true)
-        allow(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('developer')
       end
 
       it_behaves_like 'omniauth signin error' do

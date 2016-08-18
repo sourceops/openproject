@@ -34,24 +34,21 @@ module API
           authorize(:add_work_package_watchers, context: @work_package.project)
 
           available_watchers = @work_package.possible_watcher_users
-          total = available_watchers.count
           self_link = api_v3_paths.available_watchers(@work_package.id)
 
           ::API::V3::Users::UserCollectionRepresenter.new(available_watchers,
-                                                          total,
-                                                          self_link)
+                                                          self_link,
+                                                          current_user: current_user)
         end
 
         resources :watchers do
           helpers do
             def watchers_collection
               watchers = @work_package.watcher_users
-              total = watchers.count
               self_link = api_v3_paths.work_package_watchers(@work_package.id)
               Users::UserCollectionRepresenter.new(watchers,
-                                                   total,
                                                    self_link,
-                                                   context: { current_user: current_user })
+                                                   current_user: current_user)
             end
           end
 
@@ -85,7 +82,7 @@ module API
               }
             )
 
-            ::API::V3::Users::UserRepresenter.new(user)
+            ::API::V3::Users::UserRepresenter.new(user, current_user: current_user)
           end
 
           namespace ':user_id' do
@@ -100,7 +97,7 @@ module API
                 authorize(:delete_work_package_watchers, context: @work_package.project)
               end
 
-              user = User.find_by_id params[:user_id]
+              user = User.find_by(id: params[:user_id])
 
               raise ::API::Errors::NotFound unless user
 

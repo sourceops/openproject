@@ -26,15 +26,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 See doc/COPYRIGHT.rdoc for more details.
 
 ++#%>
-<fieldset class="form--fieldset principals">
-  <legend class="form--fieldset-legend">
-    <%="#{l(:label_user_plural)}/#{l(:label_group_plural)}" %>
-  </legend>
+<fieldset class="form--fieldset principals medium-11">
+  <legend class="form--fieldset-legend"><%="#{l(:label_user_plural)}/#{l(:label_group_plural)}" %></legend>
   <% if principals.empty? %>
-     <div class="form--field"><%= styled_label_tag l('notice_no_principals_found')%></div>
+    <%= l('notice_no_principals_found') %>
   <% else %>
     <% if principals.size > 20 %>
-      <div class="form--field"><%= styled_label_tag(l('notice_to_many_principals_to_display'))%></div>
+      <%= l('notice_to_many_principals_to_display') %>
     <% else %>
       <%= principals_check_box_tags 'member[user_ids][]', principals %>
     <% end %>

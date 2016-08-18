@@ -30,18 +30,18 @@ Feature: Searching
   Background:
     Given there is 1 project with the following:
       | identifier | project |
-      | name       | project |
-    And I am admin
+      | name       | test-project |
+    And there are the following work packages in project "test-project":
+      | subject |
+      | wp1     |
+    And I am already admin
 
-  @javascript
-  Scenario: Searching within a project's scope retains that scope
-    When I am on the overview page for the project called "project"
+  @javascript @selenium
+  Scenario: Searching stuff retains a project's scope
+    When I am on the overview page for the project called "test-project"
      And I search globally for "stuff"
+     And I search for "wp1" after having searched
     Then I should see "Overview" within "#main-menu"
-
-  @javascript
-  Scenario: Searching stuff again retains a project's scope
-    When I am on the overview page for the project called "project"
-     And I search globally for "stuff"
-     And I search for "stuff" after having searched
-    Then I should see "Overview" within "#main-menu"
+     And I click on "wp1" within "#search-results"
+    Then I should see "wp1" within ".wp-edit-field.subject"
+     And I should be on the page of the work package "wp1"

@@ -35,27 +35,34 @@ describe ::API::Decorators::Single do
   let(:permissions) { [:view_work_packages] }
   let(:model) { Object.new }
 
-  context 'no user given' do
-    let(:single) { ::API::Decorators::Single.new(model, context: nil) }
+  let(:single) { ::API::Decorators::Single.new(model, current_user: user) }
 
-    it 'should not authorize an empty user' do
+  it 'should authorize for a given permission' do
+    expect(single.current_user_allowed_to(:view_work_packages, context: project)).to be_truthy
+  end
+
+  context 'unauthorized user' do
+    let(:permissions) { [] }
+
+    it 'should not authorize unauthorized user' do
       expect(single.current_user_allowed_to(:view_work_packages, context: project)).to be_falsey
     end
   end
 
-  context 'user given' do
-    let(:single) { ::API::Decorators::Single.new(model, current_user: user) }
+  describe '.checked_permissions' do
+    let(:permissions) { [:add_work_packages] }
+    let!(:initial_value) { described_class.checked_permissions }
 
-    it 'should authorize for a given permission' do
-      expect(single.current_user_allowed_to(:view_work_packages, context: project)).to be_truthy
+    it 'stores the value' do
+      expect(described_class.checked_permissions).to be_nil
+
+      described_class.checked_permissions = permissions
+
+      expect(described_class.checked_permissions).to match_array permissions
     end
 
-    context 'unauthorized user' do
-      let(:permissions) { [] }
-
-      it 'should not authorize unauthorized user' do
-        expect(single.current_user_allowed_to(:view_work_packages, context: project)).to be_falsey
-      end
+    after do
+      described_class.checked_permissions = initial_value
     end
   end
 end

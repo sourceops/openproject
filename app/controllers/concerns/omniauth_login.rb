@@ -31,9 +31,19 @@ require 'uri'
 ##
 # Intended to be used by the AccountController to handle omniauth logins
 module Concerns::OmniauthLogin
-  def self.included(base)
+  extend ActiveSupport::Concern
+
+  included do
     # disable CSRF protection since that should be covered by the omniauth strategy
-    base.skip_before_filter :verify_authenticity_token, only: [:omniauth_login]
+    # the other filters are not applicable either since OmniAuth is doing authentication
+    # itself
+    [
+      :verify_authenticity_token, :user_setup,
+      :check_if_login_required, :check_session_lifetime
+    ]
+      .each { |key| skip_before_filter key, only: [:omniauth_login] }
+
+    helper :omniauth
   end
 
   def omniauth_login
@@ -43,7 +53,18 @@ module Concerns::OmniauthLogin
 
     # Set back url to page the omniauth login link was clicked on
     params[:back_url] = request.env['omniauth.origin']
-    user = User.find_or_initialize_by_identity_url identity_url_from_omniauth(auth_hash)
+
+    user =
+      if session.include? :invitation_token
+        tok = Token.find_by value: session[:invitation_token]
+        u = tok.user
+        u.identity_url = identity_url_from_omniauth(auth_hash)
+        tok.destroy
+        session.delete :invitation_token
+        u
+      else
+        User.find_or_initialize_by identity_url: identity_url_from_omniauth(auth_hash)
+      end
 
     decision = OpenProject::OmniAuth::Authorization.authorized? auth_hash
     if decision.approve?
@@ -58,32 +79,14 @@ module Concerns::OmniauthLogin
     show_error I18n.t(:error_external_authentication_failed)
   end
 
-  def self.direct_login?
-    direct_login_provider.is_a? String
-  end
-
-  ##
-  # Per default the user may choose the usual password login as well as several omniauth providers
-  # on the login page and in the login drop down menu.
-  #
-  # With his configuration option you can set a specific omniauth provider to be
-  # used for direct login. Meaning that the login provider selection is skipped and
-  # the configured provider is used directly instead.
-  #
-  # If this option is active /login will lead directly to the configured omniauth provider
-  # and so will a click on 'Sign in' (as opposed to opening the drop down menu).
-  def self.direct_login_provider
-    OpenProject::Configuration['omniauth_direct_login_provider']
-  end
-
-  def self.direct_login_provider_url(params = {})
-    url_with_params "/auth/#{direct_login_provider}", params if direct_login?
+  def direct_login_provider_url(params = {})
+    url_for params.merge(controller: '/auth', action: direct_login_provider)
   end
 
   private
 
   def authorization_successful(user, auth_hash)
-    if user.new_record?
+    if user.new_record? || user.invited?
       create_user_from_omniauth user, auth_hash
     else
       if user.active?
@@ -144,7 +147,7 @@ module Concerns::OmniauthLogin
 
   def fill_user_fields_from_omniauth(user, auth)
     user.update_attributes omniauth_hash_to_user_attributes(auth)
-    user.register
+    user.register unless user.invited?
     user
   end
 

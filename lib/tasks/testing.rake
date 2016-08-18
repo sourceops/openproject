@@ -30,14 +30,14 @@
 namespace :test do
   desc 'Run unit and functional scm tests'
   task :scm do
-    errors = %w(test:scm:units test:scm:functionals).collect do |task|
+    errors = %w(test:scm:units test:scm:functionals).collect { |task|
       begin
         Rake::Task[task].invoke
         nil
       rescue => e
         task
       end
-    end.compact
+    }.compact
     abort "Errors running #{errors.to_sentence(locale: :en)}!" if errors.any?
   end
 
@@ -96,32 +96,24 @@ namespace :test do
 
   desc 'runs all tests'
   namespace :suite do
-    task run: [:cucumber, :spec, :test]
+    task run: [:cucumber, :spec, 'spec:legacy']
   end
 end
 
-task('spec').clear
 task('spec:legacy').clear
 
-desc 'Run all specs in spec directory (excluding plugin specs)'
-task spec: %w(spec:core spec:legacy)
-
 namespace :spec do
-  desc 'Run the code examples in spec, excluding legacy'
   begin
     require 'rspec/core/rake_task'
-    RSpec::Core::RakeTask.new(core: 'spec:prepare') do |t|
-      t.exclude_pattern = 'spec/legacy/**/*_spec.rb'
-    end
 
-    desc 'Run the code examples in spec/legacy'
+    desc 'Run the code examples in spec_legacy'
     task legacy: %w(legacy:unit legacy:functional legacy:integration)
     namespace :legacy do
       %w(unit functional integration).each do |type|
-        desc "Run the code examples in spec/legacy/#{type}"
+        desc "Run the code examples in spec_legacy/#{type}"
         RSpec::Core::RakeTask.new(type => 'spec:prepare') do |t|
-          t.pattern = "spec/legacy/#{type}/**/*_spec.rb"
-          t.exclude_pattern = ''
+          t.pattern = "spec_legacy/#{type}/**/*_spec.rb"
+          t.rspec_opts = '-I spec_legacy'
         end
       end
     end
@@ -131,8 +123,8 @@ namespace :spec do
   end
 end
 
-%w(test spec).each do |type|
+%w(spec).each do |type|
   if Rake::Task.task_defined?("#{type}:prepare")
-    Rake::Task["#{type}:prepare"].enhance(['assets:webpack'])
+    Rake::Task["#{type}:prepare"].enhance(['assets:prepare_op'])
   end
 end

@@ -42,7 +42,7 @@ shared_examples 'an auth aware field' do
     }
 
     it 'is not editable' do
-      expect { field.trigger_link }.to raise_error Capybara::ElementNotFound
+      expect(field).not_to be_editable
     end
   end
 end
@@ -60,11 +60,6 @@ shared_examples 'having a single validation point' do
     field.cancel_by_click
     other_field.cancel_by_click
   end
-
-  it 'displays validation for all inputs' do
-    expect(other_field.errors_element).to be_visible
-    expect(other_field.errors_text).to eq "#{property_title} cannot be empty"
-  end
 end
 
 shared_examples 'a required field' do
@@ -77,34 +72,22 @@ shared_examples 'a required field' do
   after do
     field.cancel_by_click
   end
-
-  it 'displays a required validation' do
-    expect(field.errors_element).to be_visible
-    expect(field.errors_text).to eq "#{property_title} cannot be empty"
-  end
 end
 
 shared_examples 'a cancellable field' do
   shared_examples 'cancelling properly' do
-    it 'reverts to read state' do
+    it 'reverts to read state and keeps its focus' do
       expect(field).to_not be_editing
-    end
-
-    it 'keeps old content' do
-      expect(field.read_state_text).to eq work_package.send(property_name)
-    end
-
-    it 'focuses the trigger link' do
+      field.expect_state_text(work_package.send(property_name))
+      
       active_class_name = page.evaluate_script('document.activeElement.className')
-      trigger_link_focused = "a.#{active_class_name}" == field.trigger_link_selector
-
-      expect(trigger_link_focused).to be_truthy
+      expect(active_class_name).to include(field.trigger_link_selector[1..-1])
     end
   end
 
   context 'by click' do
     before do
-      field.activate_edition
+      field.activate!
       field.cancel_by_click
     end
 
@@ -113,14 +96,37 @@ shared_examples 'a cancellable field' do
 
   context 'by escape' do
     before do
-      field.activate_edition
+      field.activate!
       field.cancel_by_escape
     end
 
-    after do
-      field.cancel_by_click
-    end
-
     it_behaves_like 'cancelling properly'
+  end
+end
+
+shared_examples 'a previewable field' do
+  it 'can preview the field' do
+    field.activate!
+
+    field.input_element.set '*Highlight*'
+    preview = field.element.find('.jstb_preview')
+
+    # Enable preview
+    preview.click
+    expect(field.element).to have_selector('strong', text: 'Highlight')
+
+    # Disable preview
+    preview.click
+    expect(field.element).to have_no_selector('strong')
+  end
+end
+
+shared_examples 'an autocomplete field' do
+  let!(:wp2) { FactoryGirl.create(:work_package, project: project, subject: 'AutoFoo') }
+
+  it 'autocompletes the other work package' do
+    field.activate!
+    field.input_element.send_keys("##{wp2.id}")
+    expect(page).to have_selector('.atwho-view-ul li', text: wp2.to_s.strip)
   end
 end

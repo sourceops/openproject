@@ -45,8 +45,14 @@ class SettingsController < ApplicationController
       end
 
       settings.each do |name, value|
-        # remove blank values in array settings
-        value.delete_if(&:blank?) if value.is_a?(Array)
+        if value.is_a?(Array)
+          # remove blank values in array settings
+          value.delete_if(&:blank?)
+        elsif value.is_a?(Hash)
+          value.delete_if { |_, v| v.blank? }
+        else
+          value = value.strip
+        end
         Setting[name] = value
       end
 
@@ -54,7 +60,7 @@ class SettingsController < ApplicationController
       redirect_to action: 'edit', tab: params[:tab]
     else
       @options = {}
-      @options[:user_format] = User::USER_FORMATS.keys.map { |f| [User.current.name(f), f.to_s] }
+      @options[:user_format] = User::USER_FORMATS_STRUCTURE.keys.map { |f| [User.current.name(f), f.to_s] }
       @deliveries = ActionMailer::Base.perform_deliveries
 
       @guessed_host = request.host_with_port.dup
@@ -76,7 +82,7 @@ class SettingsController < ApplicationController
   end
 
   def default_breadcrumb
-    l(:label_settings)
+    l(:label_system_settings)
   end
 
   private

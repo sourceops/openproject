@@ -10,10 +10,8 @@
     "angular",
     "inject",
     "module",
-    "protractor",
 
     "I18n",
-    "Hyperagent",
     "gon",
 
     "Ajax",

@@ -30,23 +30,19 @@
 module UsersHelper
   include OpenProject::FormTagHelper
 
-  def users_status_options_for_select(selected)
-    user_count_by_status = User.count(group: 'status').to_hash
-    user_count_by_status.merge! blocked: User.blocked.count,
-                                all: User.not_builtin.count,
-                                User::STATUSES[:active] =>
-                                  User.active.not_blocked.count
-    # use non-numerical values as index to prevent clash with normal user
-    # statuses
-    status_symbols = { all: :all }
-    status_symbols.merge!(User::STATUSES.reject { |n, _i| n == :builtin })
-    status_symbols[:blocked] = :blocked
+  ##
+  # @param selected The option to be marked as selected.
+  # @param extra [Hash] A hash containing extra entries with a count for each.
+  #                     For example: { random: 42 }
+  def users_status_options_for_select(selected, extra: {})
+    statuses = User::StatusOptions.user_statuses_with_count extra: extra
+    options = statuses.map do |name, values|
+      count, value = values
 
-    statuses = status_symbols.map do |name, index|
-      ["#{translate_user_status(name.to_s)} (#{user_count_by_status[index].to_i})",
-       index]
+      ["#{translate_user_status(name)} (#{count})", value]
     end
-    options_for_select(statuses, selected)
+
+    options_for_select options, selected
   end
 
   def translate_user_status(status_name)
@@ -126,12 +122,11 @@ module UsersHelper
   end
 
   # Options for the new membership projects combo-box
+  #
+  # Disables projects the user is already member in
   def options_for_membership_project_select(user, projects)
-    options = content_tag('option', "--- #{l(:actionview_instancetag_blank_option)} ---")
-    options << project_tree_options_for_select(projects) do |p|
-      { disabled: (user.projects.include?(p)) }
-    end
-    options
+    options = project_tree_options_for_select(projects, disabled: user.projects.ids.to_set)
+    content_tag('option', "--- #{l(:actionview_instancetag_blank_option)} ---") + options
   end
 
   def user_mail_notification_options(user)

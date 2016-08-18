@@ -30,6 +30,7 @@
 module Redmine
   class CustomFieldFormat
     include Redmine::I18n
+    include ActionView::Helpers::NumberHelper
 
     cattr_accessor :available
     @@available = {}
@@ -52,19 +53,23 @@ module Redmine
       format_date(value.to_date); rescue; value     end
 
     def format_as_bool(value)
-      is_true = ActiveRecord::ConnectionAdapters::Column.value_to_boolean(value)
+      is_true = ActiveRecord::Type::Boolean.new.type_cast_from_database(value)
       l(is_true ? :general_text_Yes : :general_text_No)
     end
 
-    ['string', 'text', 'int', 'float', 'list'].each do |name|
+    ['string', 'text', 'int', 'list'].each do |name|
       define_method("format_as_#{name}") {|value|
         return value.to_s
       }
     end
 
+    def format_as_float(value)
+      number_with_delimiter(value.to_s)
+    end
+
     ['user', 'version'].each do |name|
       define_method("format_as_#{name}") {|value|
-        return value.blank? ? '' : name.classify.constantize.find_by_id(value.to_i).to_s
+        return value.blank? ? '' : name.classify.constantize.find_by(id: value.to_i).to_s
       }
     end
 

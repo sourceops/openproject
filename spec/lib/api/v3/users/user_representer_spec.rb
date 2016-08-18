@@ -36,13 +36,13 @@ describe ::API::V3::Users::UserRepresenter do
   context 'generation' do
     subject(:generated) { representer.to_json }
 
-    it { is_expected.to include_json('User'.to_json).at_path('_type') }
+    it do is_expected.to include_json('User'.to_json).at_path('_type') end
 
-    it { is_expected.to have_json_path('id') }
-    it { is_expected.to have_json_path('login') }
-    it { is_expected.to have_json_path('firstName') }
-    it { is_expected.to have_json_path('lastName') }
-    it { is_expected.to have_json_path('name') }
+    it do is_expected.to have_json_path('id') end
+    it do is_expected.to have_json_path('login') end
+    it do is_expected.to have_json_path('firstName') end
+    it do is_expected.to have_json_path('lastName') end
+    it do is_expected.to have_json_path('name') end
 
     describe 'email' do
       context 'user shows his E-Mail address' do
@@ -85,6 +85,11 @@ describe ::API::V3::Users::UserRepresenter do
         expect(subject).to have_json_path('_links/self/href')
       end
 
+      it_behaves_like 'has an untitled link' do
+        let(:link) { 'showUser' }
+        let(:href) { "/users/#{user.id}" }
+      end
+
       context 'when regular current_user' do
         it 'should have no lock-related links' do
           expect(subject).not_to have_json_path('_links/lock/href')
@@ -110,8 +115,8 @@ describe ::API::V3::Users::UserRepresenter do
       context 'when deletion is allowed' do
         before do
           allow(DeleteUserService).to receive(:deletion_allowed?)
-                                      .with(user, current_user)
-                                      .and_return(true)
+            .with(user, current_user)
+            .and_return(true)
         end
 
         it 'should link to delete' do
@@ -122,8 +127,8 @@ describe ::API::V3::Users::UserRepresenter do
       context 'when deletion is not allowed' do
         before do
           allow(DeleteUserService).to receive(:deletion_allowed?)
-                                      .with(user, current_user)
-                                      .and_return(false)
+            .with(user, current_user)
+            .and_return(false)
         end
 
         it 'should not link to delete' do
@@ -152,13 +157,6 @@ describe ::API::V3::Users::UserRepresenter do
         user.mail = nil
 
         expect(parse_json(subject, 'avatar')).to be_blank
-      end
-
-      it 'should be https if setting set to https' do
-        # have to actually set the setting for the lib to pick up the change
-        with_settings protocol: 'https' do
-          expect(parse_json(subject, 'avatar')).to start_with('https://secure.gravatar.com/avatar')
-        end
       end
     end
   end

@@ -1,12 +1,10 @@
 require 'spec_helper'
 require 'features/work_packages/details/inplace_editor/shared_examples'
 require 'features/work_packages/shared_contexts'
-require 'features/work_packages/details/inplace_editor/work_package_field'
+require 'support/work_packages/work_package_field'
 require 'features/work_packages/work_packages_page'
 
-describe 'description inplace editor', js: true do
-  include_context 'maximized window'
-
+describe 'description inplace editor', js: true, selenium: true do
   let(:project) { FactoryGirl.create :project_with_types, is_public: true }
   let(:property_name) { :description }
   let(:property_title) { 'Description' }
@@ -19,61 +17,60 @@ describe 'description inplace editor', js: true do
     )
   }
   let(:user) { FactoryGirl.create :admin }
-  let(:field) { WorkPackageField.new page, property_name }
-  let(:work_packages_page) { WorkPackagesPage.new(project) }
+  let(:field) { WorkPackageTextAreaField.new wp_page, 'description' }
+  let(:wp_page) { Pages::SplitWorkPackage.new(work_package, project) }
 
   before do
-    allow(User).to receive(:current).and_return(user)
+    login_as(user)
 
-    work_packages_page.visit_index
-
-    row = page.find("#work-package-#{work_package.id}")
-    row.double_click
-
-    ng_wait
+    wp_page.visit!
+    wp_page.ensure_page_loaded
   end
 
-  context 'in read state' do
-    it 'renders the correct text' do
-      expect(field.read_state_text).to eq work_package.send(property_name)
+  context 'with permission' do
+    it 'shows the description field' do
+      field.expect_state_text(description_text)
+    end
+  end
+
+  context 'when is empty' do
+    let(:description_text) { '' }
+
+    it 'renders a placeholder' do
+      field.expect_state_text 'Click to enter description...'
+
+      field.activate!
+      # An empty description is also allowed
+      field.expect_save_button(enabled: true)
+      field.set_value 'A new hope ...'
+      field.expect_save_button(enabled: true)
+      field.submit_by_click
+
+      wp_page.expect_notification message: I18n.t('js.notice_successful_update')
+      field.expect_state_text 'A new hope ...'
+    end
+  end
+
+  context 'with no permission' do
+    let(:user) { FactoryGirl.create(:user, member_in_project: project, member_through_role: role) }
+    let(:role) { FactoryGirl.create :role, permissions: %i(view_work_packages) }
+
+    it 'does not show the field' do
+      expect(page).to have_no_selector('.wp-edit-field.description.-editable')
+
+      field.trigger_link.click
+      field.expect_inactive!
     end
 
     context 'when is empty' do
       let(:description_text) { '' }
 
       it 'renders a placeholder' do
-        expect(field.read_state_text).to eq 'Click to enter description...'
-      end
-    end
-
-    context 'when is editable' do
-      context 'when clicking on an anchor' do
-        it 'navigates to the given url'
-        it 'does not trigger editing'
+        field.expect_state_text ''
       end
     end
   end
 
-  it_behaves_like 'an auth aware field'
   it_behaves_like 'a cancellable field'
-
-  context 'in edit state' do
-    before do
-      field.activate_edition
-    end
-
-    after do
-      field.cancel_by_click
-    end
-
-    it 'renders a textarea' do
-      expect(field.input_element).to be_visible
-      expect(field.input_element.tag_name).to eq 'textarea'
-    end
-    it 'renders formatting buttons'
-    it 'renders a preview button'
-    it 'prevents page navigation in edit mode'
-    it 'has a correct value for the textarea'
-    it 'displays the new HTML after save'
-  end
+  it_behaves_like 'an autocomplete field'
 end

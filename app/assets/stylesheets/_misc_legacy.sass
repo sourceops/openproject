@@ -33,6 +33,8 @@
 // placed elsewhere. Pleade DO NOT add to this file. Instead MOVE, refactor or
 // REMOVE with ruthlessness.
 
+$version-summary-width: 380px
+
 #watchers
   ul
     margin: 0
@@ -105,7 +107,6 @@ div.issue div.subject
     margin-top: 0.5em
 
 .buttons
-  margin-bottom: 1.4em
   margin-top: 1em
 
 div
@@ -123,44 +124,23 @@ div
     p
       margin-top: 0
       margin-bottom: 1em
-  &#activity dl
-    margin-left: 2em
-
-#search-results
-  margin-left: 2em
-
-div#activity dd, #search-results dd
-  margin-bottom: 1em
-  padding-left: 18px
-  font-size: 0.9em
-
-div#activity
-  dt
-    &.me .time
-      border-bottom: 1px solid #999
-    .time
-      color: #777
-      font-size: 80%
-  dd .description
-    font-style: italic
-
-#search-results dd .description
-  font-style: italic
 
 div#activity span.project:after, #search-results span.project:after
   content: " -"
 
-div#activity dd span.description
-  display: block
-  color: #808080
+#search-results
+  margin-left: 2em
 
-#search-results dd
-  span.description
-    display: block
-    color: #808080
-  margin-bottom: 1em
-  padding-left: 20px
-  margin-left: 0
+  dd
+    margin-bottom: 1em
+    padding-left: 30px
+    margin-left: 0
+    font-size: 0.9em
+
+    span.description
+      display: block
+      color: #808080
+      font-style: italic
 
 div#search-results-counts
   float: right
@@ -193,9 +173,11 @@ div
         font-size: 120%
       h2
         font-size: 110%
+    .generic-table--no-results-container
+      max-width: calc(100% - #{$version-summary-width})
   &#version-summary
     float: right
-    width: 380px
+    width: $version-summary-width
     margin-left: 16px
     margin-bottom: 16px
     background-color: #fff
@@ -215,31 +197,24 @@ div
     text-overflow: ellipsis
     white-space: nowrap
     overflow: hidden
+
+    &.message-title
+      padding-top: 12px
+      padding-bottom: 19px
+      white-space: normal
+      overflow: visible
+      float: left
+
+  &.messages-wrapper
+    @include clearfix
+    .toolbar-container
+      float: right
+
   ul
     margin: 0
     text-align: right
     white-space: nowrap
 
-ul.projects
-  margin: 0
-  padding-left: 1em
-  &.root
-    margin: 0
-    padding: 0
-  ul
-    border: none
-    &.projects
-      border-left: 3px solid #e0e0e0
-  li
-    &.root
-      list-style-type: none
-      margin-bottom: 1em
-    &.child
-      list-style-type: none
-      margin-top: 1em
-  div.root a.project
-    font-weight: bold
-    margin: 0 0 10px 0
 
 #type_project_ids
   ul
@@ -297,6 +272,9 @@ p.other-formats
 div#tab-content-members
   .user.status_registered, label.status_registered
     opacity: 0.8
+  .member
+    .icon-group:before
+      padding-left: 0
 
 input#user_search
   width: 100%
@@ -305,9 +283,6 @@ input#user_search
   padding-bottom: 0.5em
   &.attributes .label
     font-weight: bold
-
-#activity dt
-  clear: left
 
 .journal-link
   float: right
@@ -331,58 +306,8 @@ div.issue hr
   margin-top: -6px
   margin-bottom: 0
 
-#content div.issue table
-  td
-    background: none
-    border: 0 none
-    padding: 0 3px
-    padding-left: 0
-  th
-    background: none
-    border: 0 none
-    padding: 0 3px
-    padding-left: 0
-    font-weight: bold
-
-.attachments h4
-  margin-bottom: 6px
-  background: image-url("files-showhide.png") no-repeat right bottom
-  cursor: pointer
-  &.closed
-    background-position: right 5px
-
-table.files
-  display: table
-
-#content table.files
-  td
-    border: 0
-    background: none
-  th
-    border: 0
-    background: none
-    font-weight: bold
-    padding: 1px
-  border: 0
-  background: none
-  td
-    color: #555
-    padding: 1px
-  .opt-desc
-    width: 60%
-  td a
-    position: relative
-
 #content blockquote
   padding-left: 22px
-
-.wiki
-  ol, ul
-    padding-left: 22px
-
-blockquote
-  font-style: italic
-  background: image-url("blockquote-bg.png") no-repeat 5px 3px
 
 #project-links
   right: 30px
@@ -399,21 +324,6 @@ li
   &.root
     margin-bottom: 24px
 
-.nosidebar ul.projects
-  margin: 24px 0 0
-  ul
-    margin: 0
-
-.nosidebar ul.projects li
-  list-style: none outside none
-  background: none
-
-ul.projects
-  a
-    font-weight: bold
-  li div.root
-    margin-bottom: 12px
-
 .profile-wrap
   float: right
   position: relative
@@ -421,22 +331,6 @@ ul.projects
   height: 42px
   top: 7px
   right: 14px
-
-/* file table hovers */
-
-a.has-thumb
-  img
-    position: absolute
-    display: none
-    border: 1px solid #a6c6cf
-    padding: 4px
-    background: #fff
-    border-radius: 3px
-  &.active
-    left: -10px
-    background: image-url("thumb-arrow-right.png") no-repeat left center
-    padding-left: 10px
-    margin-right: -10px
 
 td.issue div.issue-wrap-outer
   position: relative
@@ -473,9 +367,6 @@ form#issue-list
 tr.context-menu-selection td.priority
   background: none !important
 
-ul.projects div.root a.project
-  font-family: inherit
-
 div.issue div#relations
   margin-top: 25px
 
@@ -495,6 +386,8 @@ div.issue hr
     margin-bottom: 6px
 
 #content
+  min-height: 300px
+
   h3
     margin: 12px 0 6px
   h2 + h3
@@ -507,18 +400,11 @@ div.issue hr
 tr.time-entry
   white-space: normal
 
-/* comments */
-
-.wiki ol li
-  list-style: decimal inside
-
 /* scm */
 
 #content table .changeset td.id a:hover
   text-decoration: underline
 
-#content table.files .opt-desc
-  width: 45%
 
 /* member settings [pc] */
 
@@ -557,12 +443,14 @@ a.has-thumb
   -o-text-overflow: ellipsis
   -ms-text-overflow: ellipsis
 
-label.label-with-input
-  display: block
-  white-space: nowrap
-  zoom: 1
-  margin-left: 0
-  float: none
+label
+  margin-bottom: 0rem
+  &.label-with-input
+    display: block
+    white-space: nowrap
+    zoom: 1
+    margin-left: 0
+    float: none
 
 #query_form_content
   padding-top: 10px
@@ -615,9 +503,6 @@ th.checkbox img
 p.buttons
   margin-left: 10px
 
-div.contextual > a.icon, p.buttons > a, ul.action_menu_main > li
-  padding-right: 10px
-
 strong.related-issues-heading
   display: block
   margin-top: 10px
@@ -639,6 +524,7 @@ div.indent
   select#parent_wiki_menu_item
     margin-left: 7px
     margin-top: -1px
+    line-height: normal
   #item-name
     float: left
     padding-left: 3px
@@ -657,27 +543,26 @@ div.indent
       margin-left: 10px
       padding-top: 0
 
-#content
-  #history
-    background: image-url("dotted-separator.gif") repeat-x scroll 0 bottom transparent
-  .wiki-content
-    p, li
-      width: 700px
-
 /*Cost-Plugin specific styles */
 
 input::-webkit-input-placeholder, :-moz-placeholder
   color: #000000
 
 #ui-dialog-closer
-  background-image: image-url("modal_close.png")
   cursor: pointer
-  height: 33px
   position: absolute
-  right: -15px
-  top: -15px
-  width: 33px
+  right: 0px
+  top: 5px
   z-index: 5000
+
+  &.icon:before
+    color: $body-font-color
+
+#modalDiv
+  padding: 2em 0 0 1.5em
+
+  &.-full
+    padding: 0
 
 h4.comment
   margin-bottom: 8px
@@ -697,3 +582,30 @@ h4.comment
   border: 0
   @include breakpoint(medium down)
     font-size: $h2-font-size
+
+a.impaired--empty-link,
+.impaired--empty-link
+  color: inherit
+
+/* Align widget boxes with description above on project overview */
+.project-overview
+  margin: 0 -10px
+
+/* Legacy styles for my project page plugin version (without widget-box styles) */
+#invisible-grid
+  #list-left
+    .mypage-box
+      margin-right: 10px
+
+  #list-right
+    .mypage-box
+      margin-left: 10px
+
+  .mypage-box
+    .box-actions
+      margin-top: -60px
+
+
+// Override default margin to allow correct vertical alignment
+#members_add_form .grid-block .button
+  margin-bottom: 0

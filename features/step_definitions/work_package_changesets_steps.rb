@@ -28,37 +28,32 @@
 #++
 
 Given(/^the work package "(.*?)" has the following changesets:$/) do |subject, table|
-  wp = WorkPackage.find_by_subject!(subject)
+  wp = WorkPackage.find_by!(subject: subject)
 
   repo = wp.project.repository
 
-  wp_changesets = table.hashes.map do |row|
+  wp_changesets = table.hashes.map { |row|
     FactoryGirl.build(:changeset, row.merge(repository: repo))
-  end
+  }
 
   wp.changesets = wp_changesets
 end
 
 Then(/^I should see the following changesets:$/) do |table|
-  displayed_changesets = all('#work_package-changesets .changeset')
-
   unless (unsupported = table.headers - ['revision', 'comments']).empty?
     raise ArgumentError, "#{unsupported.join(', ')} is unsupported. But you can change that."
   end
 
   table.hashes.each do |row|
-    displayed_changesets.any? do |displayed_changeset|
-      (!row[:revision] ||
-       (row[:revision] &&
-        displayed_changeset.has_selector?('a', text: I18n.t(:label_revision_id,
-                                                            value: row[:revision])))) &&
-        (row[:comments] ||
-         (row[:comments] &&
-          displayed_changeset.has_selector?('', text: row[:comments])))
-    end.should be_truthy
+    # this will only work with one revision as we do not have proper markup
+    # to identify different changesets
+    within('.work-package-details-activities-list .revision-activity--revision-link') do
+      expect(page).to have_content("committed revision #{row[:revision]}")
+    end
   end
 end
 
 Then(/^I should not be presented changesets$/) do
-  should_not have_selector('#work_package-changesets .changeset')
+  expect(page)
+    .not_to have_selector('.work-package-details-activities-list .revision-activity--revision-link')
 end

@@ -30,7 +30,6 @@
 require 'open_project/scm/adapters/subversion'
 
 class Repository::Subversion < Repository
-  attr_protected :root_url
   validates_presence_of :url
   validates_format_of :url, with: /\A(http|https|svn(\+[^\s:\/\\]+)?|file):\/\/.+\z/i
 
@@ -39,7 +38,7 @@ class Repository::Subversion < Repository
   end
 
   def configure(scm_type, _args)
-    if scm_type == MANAGED_TYPE
+    if scm_type == self.class.managed_type
       unless manageable?
         raise OpenProject::Scm::Exceptions::RepositoryBuildError.new(
           I18n.t('repositories.managed.error_not_manageable')
@@ -51,13 +50,17 @@ class Repository::Subversion < Repository
     end
   end
 
+  def self.authorization_policy
+    ::Scm::SubversionAuthorizationPolicy
+  end
+
   def self.permitted_params(params)
     super(params).merge(params.permit(:login, :password))
   end
 
-  def supported_types
+  def self.supported_types
     types = [:existing]
-    types << MANAGED_TYPE if manageable?
+    types << managed_type if manageable?
 
     types
   end
@@ -66,12 +69,12 @@ class Repository::Subversion < Repository
     scm.create_empty_svn
   end
 
-  def supports_directory_revisions?
-    true
+  def repository_type
+    'Subversion'
   end
 
-  def repository_identifier
-    "#{super}.svn"
+  def supports_directory_revisions?
+    true
   end
 
   def repo_log_encoding
@@ -80,7 +83,7 @@ class Repository::Subversion < Repository
 
   def latest_changesets(path, rev, limit = 10)
     revisions = scm.revisions(path, rev, nil, limit: limit)
-    revisions ? changesets.find_all_by_revision(revisions.map(&:identifier), order: 'committed_on DESC', include: :user) : []
+    revisions ? changesets.where(revision: revisions.map(&:identifier)).order('committed_on DESC').includes(:user) : []
   end
 
   # Returns a path relative to the url of the repository
@@ -119,6 +122,8 @@ class Repository::Subversion < Repository
         end
       end
     end
+  rescue => e
+    Rails.logger.error("Failed to fetch changesets from repository: #{e.message}")
   end
 
   private

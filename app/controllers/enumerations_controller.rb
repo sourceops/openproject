@@ -49,8 +49,8 @@ class EnumerationsController < ApplicationController
   end
 
   def create
-    enum_params = permitted_params.enumeration
-    type = params[:enumeration][:type]
+    enum_params = permitted_params.enumerations
+    type = permitted_params.enumeration_type
     @enumeration = (enumeration_class(type) || Enumeration).new do |e|
       e.attributes = enum_params
     end
@@ -64,8 +64,8 @@ class EnumerationsController < ApplicationController
   end
 
   def update
-    enum_params = permitted_params.enumeration
-    type = params[:enumeration][:type]
+    enum_params = permitted_params.enumerations
+    type = permitted_params.enumeration_type
     @enumeration.type = enumeration_class(type).try(:name) || @enumeration.type
     if @enumeration.update_attributes enum_params
       flash[:notice] = l(:notice_successful_update)
@@ -82,13 +82,13 @@ class EnumerationsController < ApplicationController
       redirect_to action: 'index'
       return
     elsif params[:reassign_to_id]
-      if reassign_to = @enumeration.class.find_by_id(params[:reassign_to_id])
+      if reassign_to = @enumeration.class.find_by(id: params[:reassign_to_id])
         @enumeration.destroy(reassign_to)
         redirect_to action: 'index'
         return
       end
     end
-    @enumerations = @enumeration.class.find(:all) - [@enumeration]
+    @enumerations = @enumeration.class.all - [@enumeration]
   end
 
   protected

@@ -44,7 +44,7 @@ class LdapAuthSource < AuthSource
     attrs = get_user_dn(login)
 
     if attrs && attrs[:dn] && authenticate_dn(attrs[:dn], password)
-      logger.debug "Authentication successful for '#{login}'" if logger && logger.debug?
+      Rails.logger.debug { "Authentication successful for '#{login}'" }
       return attrs.except(:dn)
     end
   rescue  Net::LDAP::LdapError => error
@@ -53,10 +53,11 @@ class LdapAuthSource < AuthSource
 
   # test the connection to the LDAP
   def test_connection
-    ldap_con = initialize_ldap_con(account, account_password)
-    ldap_con.open {}
+    unless authenticate_dn(account, account_password)
+      raise I18n.t('auth_source.ldap_error', error_message: I18n.t('auth_source.ldap_auth_failed'))
+    end
   rescue  Net::LDAP::LdapError => text
-    raise 'LdapError: ' + text.to_s
+    raise I18n.t('auth_source.ldap_error', error_message: text.to_s)
   end
 
   def auth_method_name
@@ -114,17 +115,19 @@ class LdapAuthSource < AuthSource
     object_filter = Net::LDAP::Filter.eq('objectClass', '*')
     attrs = {}
 
+    Rails.logger.debug {
+      "LDAP initializing search (BASE=#{base_dn}), (FILTER=#{(object_filter & login_filter).to_s})"
+    }
     ldap_con.search(base: base_dn,
                     filter: object_filter & login_filter,
                     attributes: search_attributes) do |entry|
-
       if onthefly_register?
         attrs = get_user_attributes_from_ldap_entry(entry)
       else
         attrs = { dn: entry.dn }
       end
 
-      logger.debug "DN found for #{login}: #{attrs[:dn]}" if logger && logger.debug?
+      Rails.logger.debug { "DN found for #{login}: #{attrs[:dn]}" }
     end
 
     attrs

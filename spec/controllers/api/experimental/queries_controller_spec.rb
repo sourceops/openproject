@@ -51,12 +51,10 @@ describe Api::Experimental::QueriesController, type: :controller do
       allow(QueryPolicy).to receive(:new).and_return(policy)
 
       expect(policy).to receive(:allowed?) do |received_query, received_action|
-
         if received_query.id == query.id &&
            Array(allowed_actions).include?(received_action)
           called_with_expected_args << received_action
         end
-
       end.at_least(1).times.and_return(true)
     end
 
@@ -81,14 +79,14 @@ describe Api::Experimental::QueriesController, type: :controller do
       it 'assigns available_columns' do
         get :available_columns, format: :json
         expect(assigns(:available_columns)).not_to be_empty
-        expect(assigns(:available_columns).first).to have_key('name')
-        expect(assigns(:available_columns).first).to have_key('meta_data')
+        expect(assigns(:available_columns).first).to have_key(:name)
+        expect(assigns(:available_columns).first).to have_key(:meta_data)
       end
     end
 
     it 'renders the available_columns template' do
       get :available_columns, format: :json
-      expect(response).to render_template('api/experimental/queries/available_columns', formats: %w(api))
+      expect(response).to render_template('api/experimental/queries/available_columns')
     end
 
     context 'without the necessary permissions' do
@@ -116,7 +114,7 @@ describe Api::Experimental::QueriesController, type: :controller do
 
     it 'renders the custom_field template' do
       get :custom_field_filters, format: :json
-      expect(response).to render_template('api/experimental/queries/custom_field_filters', formats: %w(api))
+      expect(response).to render_template('api/experimental/queries/custom_field_filters')
     end
 
     context 'without the necessary permissions' do
@@ -139,7 +137,6 @@ describe Api::Experimental::QueriesController, type: :controller do
       it 'responds with 200' do
         get :grouped, format: :json, project_id: project.id
       end
-
     end
 
     context 'without a project' do
@@ -167,11 +164,11 @@ describe Api::Experimental::QueriesController, type: :controller do
     context 'within a project' do
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'project_id' => project.id,
           'format' => 'json' }
@@ -186,11 +183,11 @@ describe Api::Experimental::QueriesController, type: :controller do
     context 'without a project' do
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'format' => 'json' }
       end
@@ -222,11 +219,11 @@ describe Api::Experimental::QueriesController, type: :controller do
       let(:query) { FactoryGirl.create(:query, project: project, user: user) }
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'query_id' => query.id,
           'id' => query.id,
@@ -256,7 +253,7 @@ describe Api::Experimental::QueriesController, type: :controller do
                                role_ids: [role.id])
           }
 
-          before { allow(User).to receive(:current).and_return(user) }
+          before { login_as(user) }
 
           context 'with other changes' do
             include_context 'expects policy to be followed', [:update, :publicize]
@@ -268,11 +265,11 @@ describe Api::Experimental::QueriesController, type: :controller do
 
           describe 'w/o other changes' do
             let(:change_public_state_only_params) do
-              { 'f' => ['status_id'],
+              { 'f' => ['status'],
                 'is_public' => 'true',
                 'name' => query.name,
-                'op' => { 'status_id' => 'o' },
-                'v' => { 'status_id' => [''] },
+                'op' => { 'status' => 'o' },
+                'v' => { 'status' => [''] },
                 'query_id' => query.id,
                 'id' => query.id,
                 'project_id' => project.id,
@@ -324,11 +321,11 @@ describe Api::Experimental::QueriesController, type: :controller do
 
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'query_id' => query.id,
           'id' => query.id,
@@ -357,7 +354,6 @@ describe Api::Experimental::QueriesController, type: :controller do
   end
 
   describe '#destroy' do
-
     context 'within a project' do
       let(:query) { FactoryGirl.create(:query, project: project) }
 
@@ -365,11 +361,11 @@ describe Api::Experimental::QueriesController, type: :controller do
 
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'query_id' => query.id,
           'id' => query.id,
@@ -390,11 +386,11 @@ describe Api::Experimental::QueriesController, type: :controller do
 
       let(:valid_params) do
         { 'c' => ['type', 'status', 'priority', 'assigned_to'],
-          'f' => ['status_id'],
+          'f' => ['status'],
           'group_by' => '',
           'is_public' => 'false',
           'name' => 'sdfsdfsdf',
-          'op' => { 'status_id' => 'o' },
+          'op' => { 'status' => 'o' },
           'sort' => 'parent:desc',
           'query_id' => query.id,
           'id' => query.id,
@@ -421,5 +417,4 @@ describe Api::Experimental::QueriesController, type: :controller do
       end
     end
   end
-
 end

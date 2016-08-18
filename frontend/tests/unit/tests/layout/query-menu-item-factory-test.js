@@ -35,7 +35,7 @@ describe('queryMenuItemFactory', function() {
       queryMenuItemFactory, state = {}, stateParams = {};
 
   beforeEach(angular.mock.module('openproject.layout'));
-  beforeEach(module('openproject.templates',
+  beforeEach(angular.mock.module('openproject.templates',
                     'openproject.services',
                     'openproject.models',
                     'openproject.api',
@@ -47,7 +47,7 @@ describe('queryMenuItemFactory', function() {
     $provide.constant('ConfigurationService', configurationService);
   }));
 
-  beforeEach(module('openproject.templates', function($provide) {
+  beforeEach(angular.mock.module('openproject.templates', function($provide) {
     // Mock check whether we are on a work_packages page
     state = { includes: function() { return true; } };
     $provide.value('$state', state);
@@ -75,7 +75,7 @@ describe('queryMenuItemFactory', function() {
     // The document does not seem to be cleaned up after each test instead each
     // test leaves additional DOM. Thus the tests are not independent.
     // Therefore we clean it by hand.
-    $document.find('body').html('');
+    menuContainer.remove();
   }));
 
   describe('#generateMenuItem for a query', function() {

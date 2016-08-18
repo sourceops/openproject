@@ -38,7 +38,9 @@ module API
 
         @format = 'plain' if @format.blank?
 
-        super(model)
+        # Note: TextFormatting actually makes use of User.current, if it was possible to pass a
+        # current_user explicitly, it would make sense to pass one here too.
+        super(model, current_user: nil)
       end
 
       property :format,
@@ -58,6 +60,13 @@ module API
 
       def to_html
         format_text(represented, format: @format, object: @object)
+      end
+
+      private
+
+      def model_required?
+        # the formatted string may also be nil, we are prepared for that
+        false
       end
     end
   end

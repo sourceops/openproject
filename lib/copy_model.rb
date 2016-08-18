@@ -37,7 +37,7 @@ module CopyModel
     def copy_attributes(from_model)
       with_model(from_model) do |model|
         # clear unique attributes
-        self.safe_attributes = model.attributes.dup.except(*(Array(self.class.not_to_copy).map(&:to_s)))
+        self.attributes = model.attributes.dup.except(*(Array(self.class.not_to_copy).map(&:to_s)))
         return self
       end
     end
@@ -53,15 +53,15 @@ module CopyModel
     #
     # Examples:
     #   model.copy_associations(1)                                    # => copies everything
-    #   model.copy_associations(1, :only => 'members')                # => copies members only
-    #   model.copy_associations(1, :only => ['members', 'versions'])  # => copies members and versions
+    #   model.copy_associations(1, only: 'members')                # => copies members only
+    #   model.copy_associations(1, only: ['members', 'versions'])  # => copies members and versions
     def copy_associations(from_model, options = {})
       to_be_copied = self.class.reflect_on_all_associations.map(&:name)
       to_be_copied = Array(options[:only]) unless options[:only].nil?
 
-      to_be_copied = to_be_copied.map(&:to_s).sort do |a, b|
+      to_be_copied = to_be_copied.map(&:to_s).sort { |a, b|
         (copy_precedence.map(&:to_s).index(a) || -1) <=> (copy_precedence.map(&:to_s).index(b) || -1)
-      end.map(&:to_sym)
+      }.map(&:to_sym)
 
       with_model(from_model) do |model|
         self.class.transaction do
@@ -102,8 +102,6 @@ module CopyModel
         else
           return model
         end
-      else
-        nil
       end
     end
 
@@ -156,12 +154,10 @@ module CopyModel
   def self.included(base)
     base.send :extend,  self::ClassMethods
     base.send :include, self::InstanceMethods
-    base.send :include, Redmine::SafeAttributes
   end
 
   def self.extended(base)
     base.send :extend,  self::ClassMethods
     base.send :include, self::InstanceMethods
-    base.send :include, Redmine::SafeAttributes
   end
 end

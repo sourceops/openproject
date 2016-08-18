@@ -26,16 +26,13 @@
 // See doc/COPYRIGHT.rdoc for more details.
 //++
 
-module.exports = function(HALAPIResource, $http, PathHelper) {
+module.exports = function(
+  $http,
+  PathHelper,
+  CacheService) {
 
-  var registeredUserIds = [], cachedUsers = {};
-
+  var registeredUserIds = [];
   var UserService = {
-    getUser: function(id) {
-      // TODO authorization
-      var resource = HALAPIResource.setup("users/" + id);
-      return resource.fetch();
-    },
 
     getUsers: function(projectIdentifier) {
       var url, params;

@@ -31,8 +31,8 @@ See doc/COPYRIGHT.rdoc for more details.
   project = form.object
 %>
 
-<fieldset class="form--fieldset -with-control">
-  <legend class="form--fieldset-legend"><%= l(:text_select_project_modules) %></legend>
+<fieldset class="form--fieldset -with-control" id="modules-form">
+  <legend class="form--fieldset-legend"><%= l(:label_enabled_project_modules) %></legend>
 
   <div class="form--fieldset-control">
     <span class="form--fieldset-control-container">
@@ -45,7 +45,7 @@ See doc/COPYRIGHT.rdoc for more details.
       <%= form.collection_check_box :enabled_module_names,
                                     name,
                                     @project.module_enabled?(name),
-                                    l_or_humanize(name, :prefix => "project_module_") %>
+                                    l_or_humanize(name, prefix: "project_module_") %>
 
     </div>
   <% end %>

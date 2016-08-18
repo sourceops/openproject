@@ -43,7 +43,6 @@ describe UsersController, type: :controller do
   let(:anonymous) { FactoryGirl.create(:anonymous) }
 
   describe 'GET deletion_info' do
-
     describe "WHEN the current user is the requested user
               WHEN the setting users_deletable_by_self is set to true" do
       let(:params) { { 'id' => user.id.to_s } }
@@ -56,8 +55,8 @@ describe UsersController, type: :controller do
         end
       end
 
-      it { expect(response).to be_success }
-      it { expect(assigns(:user)).to eq(user) }
+      it do expect(response).to be_success end
+      it do expect(assigns(:user)).to eq(user) end
       it { expect(response).to render_template('deletion_info') }
     end
 
@@ -105,8 +104,8 @@ describe UsersController, type: :controller do
         end
       end
 
-      it { expect(response).to be_success }
-      it { expect(assigns(:user)).to eq(user) }
+      it do expect(response).to be_success end
+      it do expect(assigns(:user)).to eq(user) end
       it { expect(response).to render_template('deletion_info') }
     end
 
@@ -126,6 +125,48 @@ describe UsersController, type: :controller do
     end
   end
 
+  describe 'POST resend_invitation' do
+    let(:invited_user) { FactoryGirl.create :invited_user }
+
+    context 'without admin rights' do
+      let(:normal_user) { FactoryGirl.create :user }
+
+      before do
+        as_logged_in_user normal_user do
+          post :resend_invitation, id: invited_user.id
+        end
+      end
+
+      it 'returns 403 forbidden' do
+        expect(response.status).to eq 403
+      end
+    end
+
+    context 'with admin rights' do
+      let(:admin_user) { FactoryGirl.create :admin }
+
+      before do
+        expect(ActionMailer::Base.deliveries).to be_empty
+
+        as_logged_in_user admin_user do
+          post :resend_invitation, id: invited_user.id
+        end
+      end
+
+      it 'redirects back to the edit user page' do
+        expect(response).to redirect_to edit_user_path(invited_user)
+      end
+
+      it 'sends another activation email' do
+        mail = ActionMailer::Base.deliveries.first.body.parts.first.body.to_s
+        token = Token.find_by user_id: invited_user.id, action: UserInvitation.token_action
+
+        expect(mail).to include 'activate your account'
+        expect(mail).to include token.value
+      end
+    end
+  end
+
   describe 'POST destroy' do
     describe "WHEN the current user is the requested one
               WHEN the setting users_deletable_by_self is set to true" do
@@ -140,7 +181,7 @@ describe UsersController, type: :controller do
         end
       end
 
-      it { expect(response).to redirect_to(controller: 'account', action: 'login') }
+      it do expect(response).to redirect_to(controller: 'account', action: 'login') end
       it { expect(flash[:notice]).to eq(I18n.t('account.deleted')) }
     end
 
@@ -191,7 +232,7 @@ describe UsersController, type: :controller do
         end
       end
 
-      it { expect(response).to redirect_to(controller: 'users', action: 'index') }
+      it do expect(response).to redirect_to(controller: 'users', action: 'index') end
       it { expect(flash[:notice]).to eq(I18n.t('account.deleted')) }
     end
 
@@ -213,7 +254,11 @@ describe UsersController, type: :controller do
     end
   end
 
-  describe '#change_status' do
+  describe '#change_status',
+           with_settings: {
+             available_languages: %i(en de),
+             bcc_recipients: 1
+           } do
     describe 'WHEN activating a registered user' do
       let!(:registered_user) do
         FactoryGirl.create(:user, status: User::STATUSES[:registered],
@@ -221,14 +266,10 @@ describe UsersController, type: :controller do
       end
 
       before do
-        ActionMailer::Base.deliveries.clear
-        with_settings(available_languages: [:en, :de],
-                      bcc_recipients: '1') do
-          as_logged_in_user admin do
-            post :change_status, id: registered_user.id,
-                                 user: { status: User::STATUSES[:active] },
-                                 activate: '1'
-          end
+        as_logged_in_user admin do
+          post :change_status, id: registered_user.id,
+                               user: { status: User::STATUSES[:active] },
+                               activate: '1'
         end
       end
 
@@ -238,7 +279,7 @@ describe UsersController, type: :controller do
 
       it 'should send an email to the correct user in the correct language' do
         mail = ActionMailer::Base.deliveries.last
-        assert_not_nil mail
+        refute_nil mail
         assert_equal [registered_user.mail], mail.to
         mail.parts.each do |part|
           assert part.body.encoded.include?(I18n.t(:notice_account_activated,
@@ -249,40 +290,6 @@ describe UsersController, type: :controller do
   end
 
   describe 'index' do
-    describe 'new user button' do
-      render_views
-
-      context 'with password login enabled' do
-        before do
-          allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(false)
-
-          as_logged_in_user admin do
-            get :index
-          end
-        end
-
-        it 'is shown' do
-          expect(response.body).to have_selector('a', text: I18n.t('label_user_new'))
-        end
-      end
-
-      context 'with password login disabled' do
-        before do
-          allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(true)
-
-          as_logged_in_user admin do
-            get :index
-          end
-        end
-
-        # you must not be able to create new users if password login is disabled
-        # as users are managed externally
-        it 'is hidden' do
-          expect(response.body).not_to have_selector('a', text: I18n.t('label_user_new'))
-        end
-      end
-    end
-
     describe 'with session lifetime' do
       # TODO move this section to a proper place because we test a
       # before_filter from the application controller
@@ -383,68 +390,6 @@ describe UsersController, type: :controller do
     end
   end
 
-  describe '#new' do
-    context 'with password login enabled' do
-      before do
-        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(false)
-
-        as_logged_in_user admin do
-          get :new
-        end
-      end
-
-      it 'should return HTTP 200' do
-        expect(response.status).to eq 200
-      end
-    end
-
-    context 'with password login disabled' do
-      before do
-        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(true)
-
-        as_logged_in_user admin do
-          get :new
-        end
-      end
-
-      # you must not be able to create new users if password login is disabled
-      it 'should return HTTP 404' do
-        expect(response.status).to eq 404
-      end
-    end
-  end
-
-  describe '#create' do
-    context 'with password login enabled' do
-      before do
-        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(false)
-
-        as_logged_in_user admin do
-          post :create
-        end
-      end
-
-      it 'should return HTTP 400 due to missing parameters' do
-        expect(response.status).to eq 400
-      end
-    end
-
-    context 'with password login disabled' do
-      before do
-        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(true)
-
-        as_logged_in_user admin do
-          post :create
-        end
-      end
-
-      # you must not be able to create new users if password login is disabled
-      it 'should return HTTP 404' do
-        expect(response.status).to eq 404
-      end
-    end
-  end
-
   describe 'update' do
     context 'fields' do
       let(:user) {
@@ -456,8 +401,6 @@ describe UsersController, type: :controller do
       }
 
       before do
-        ActionMailer::Base.deliveries.clear
-
         as_logged_in_user(admin) do
           put :update, id: user.id, user: { admin: false,
                                             firstname: 'Changed',
@@ -552,20 +495,18 @@ describe UsersController, type: :controller do
 
       expect(response.status).to eql(200)
 
-      is_member = user.reload.memberships.any? do |m|
+      is_member = user.reload.memberships.any? { |m|
         m.project_id == project.id && m.role_ids.include?(role.id)
-      end
+      }
       expect(is_member).to eql(true)
     end
   end
 
   describe 'Anonymous should not be able to create a user' do
-
     it 'should redirect to the login page' do
       post :create, user: { login: 'psmith', firstname: 'Paul', lastname: 'Smith' }, password: 'psmithPSMITH09', password_confirmation: 'psmithPSMITH09'
       expect(response).to redirect_to '/login?back_url=http%3A%2F%2Ftest.host%2Fusers'
     end
-
   end
 
   describe 'show' do
@@ -646,7 +587,6 @@ describe UsersController, type: :controller do
       it 'should have more than one event for today' do
         expect(assigns(:events_by_day).first.size).to be > 1
       end
-
     end
   end
 end

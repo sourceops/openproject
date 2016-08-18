@@ -29,7 +29,6 @@
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper.rb')
 
 describe OpenProject::JournalFormatter::Attachment do
-
   include ApplicationHelper
   include ActionView::Helpers::TagHelper
   # WARNING: the order of the modules is important to ensure that url_for of
@@ -41,13 +40,11 @@ describe OpenProject::JournalFormatter::Attachment do
     { only_path: true }
   end
 
-  Struct.new('TestJournal', :id)
-
   let(:klass) { OpenProject::JournalFormatter::Attachment }
   let(:instance) { klass.new(journal) }
   let(:id) { 1 }
   let(:journal) do
-    Struct::TestJournal.new(id)
+    OpenStruct.new(id: id)
   end
   let(:user) { FactoryGirl.create(:user) }
   let(:attachment) {
@@ -65,8 +62,8 @@ describe OpenProject::JournalFormatter::Attachment do
       #
       # let(:expected) {
       #  I18n.t(:text_journal_added,
-      #                        :label => "<strong>#{I18n.t(:label_attachment)}</strong>",
-      #                        :value => link_to_attachment(attachment)) }
+      #                        label: "<strong>#{I18n.t(:label_attachment)}</strong>",
+      #                        value: link_to_attachment(attachment)) }
 
       # it { instance.render(key, [nil, attachment.id.to_s]).should == expected }
       #

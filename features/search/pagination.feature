@@ -31,13 +31,11 @@ Feature: Pagination
     Given there are 15 work packages with "wurst" in their description
     And I am admin
 
-  @javascript
+  @javascript @selenium
   Scenario: The search result pages do not change while going back and forth
     When I search globally for "wurst"
-    Then I can see the 6th through 15th of those work packages
-  	And there are pagination links
-  	And I turn over to the next results page
-  	Then I can see the 1st through 5th of those work packages
-  	And there are pagination links
-  	And I turn over to the previous results page
-  	Then I can see the 6th through 15th of those work packages
+    Then I should see "Results (15)"
+    And I should see "wurst" within "#search-results"
+    When I click on a search result pagination link
+    Then I should see "Results (15)"
+    Then I should see "wurst" within "#search-results"

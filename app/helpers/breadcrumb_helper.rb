@@ -29,7 +29,7 @@
 
 module BreadcrumbHelper
   def full_breadcrumb
-    breadcrumb_list(link_to(icon_wrapper('icon2 icon-home2', I18n.t(:label_home)), home_path),
+    breadcrumb_list(link_to(icon_wrapper('icon2 icon-home', I18n.t(:label_home)), home_path),
                     link_to_project_ancestors(@project),
                     *breadcrumb_paths)
   end
@@ -44,9 +44,9 @@ module BreadcrumbHelper
     cutme_elements = []
     breadcrumb_elements = [content_tag(:li, elements.shift.to_s, class: 'first-breadcrumb-element', style: 'list-style-image:none;')]
 
-    breadcrumb_elements += elements.map do |element|
+    breadcrumb_elements += elements.map { |element|
       content_tag(:li, h(element.to_s)) if element
-    end
+    }
 
     content_tag(:ul, breadcrumb_elements.join.html_safe, class: 'breadcrumb')
   end

@@ -27,46 +27,4 @@
 //++
 
 angular.module('openproject.workPackages.tabs')
-  .directive('addWorkPackageChild', require(
-    './add-work-package-child-directive'))
-  .directive('addWorkPackageRelation', require(
-    './add-work-package-relation-directive'))
-  .directive('exclusiveEdit', require('./exclusive-edit-directive'))
-  .directive('panelExpander', require('./panel-expander-directive'))
-  .directive('relatedWorkPackageTableRow', [
-    'I18n',
-    'PathHelper',
-    'WorkPackagesHelper', require(
-      './related-work-package-table-row-directive')
-  ])
-  .directive('userActivity', [
-    '$uiViewScroll',
-    '$timeout',
-    '$location',
-    '$sce',
-    'I18n',
-    'PathHelper',
-    'ActivityService',
-    'UsersHelper',
-    'ConfigurationService',
-    'AutoCompleteHelper',
-    require('./user-activity-directive')
-  ])
-  .directive('workPackageRelations', [
-    'I18n',
-    'WorkPackagesHelper',
-    '$timeout',
-    require('./work-package-relations-directive')
-  ]);
-
-// FIXME: move modules or files to the right place
-angular.module('openproject.workPackages.directives')
-  .directive('attachmentFileSize', require('./attachment-file-size-directive'))
-  .directive('attachmentTitleCell', ['PathHelper', require(
-    './attachment-title-cell-directive')])
-  .directive('attachmentUserCell', ['PathHelper', require(
-    './attachment-user-cell-directive')])
-  .directive('attachmentsTable', ['I18n', require(
-    './attachments-table-directive')])
-  .directive('attachmentsTitle', require('./attachments-title-directive'))
-  .directive('editableComment', require('./editable-comment-directive'));
+    .directive('panelExpander', require('./panel-expander-directive'));

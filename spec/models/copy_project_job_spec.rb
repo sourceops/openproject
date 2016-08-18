@@ -33,28 +33,31 @@ describe CopyProjectJob, type: :model do
   let(:user) { FactoryGirl.create(:user) }
   let(:role) { FactoryGirl.create(:role, permissions: [:copy_projects]) }
   let(:params) { { name: 'Copy', identifier: 'copy' } }
+  let(:maildouble) { double('Mail::Message', deliver: true) }
+
+  before do
+    allow(maildouble).to receive(:deliver_now).and_return nil
+  end
 
   describe 'copy localizes error message' do
-
     let(:user_de) { FactoryGirl.create(:admin, language: :de) }
     let(:source_project) { FactoryGirl.create(:project) }
     let(:target_project) { FactoryGirl.create(:project) }
 
     let(:copy_job) {
-      CopyProjectJob.new user_de.id,
-                         source_project.id,
-                         target_project,
-                         [], # enabled modules
-                         [], # associations
-                         false
-    } # send mails
+      CopyProjectJob.new user_id: user_de.id,
+                         source_project_id: source_project.id,
+                         target_project_params: target_project,
+                         enabled_modules: [],
+                         associations_to_copy: []
+    }
 
     before do
       # 'Delayed Job' uses a work around to get Rails 3 mailers working with it
       # (see https://github.com/collectiveidea/delayed_job#rails-3-mailers).
       # Thus, we need to return a message object here, otherwise 'Delayed Job'
       # will complain about an object without a method #deliver.
-      allow(UserMailer).to receive(:copy_project_failed).and_return(double('Mail::Message', deliver: true))
+      allow(UserMailer).to receive(:copy_project_failed).and_return(maildouble)
     end
 
     it 'sets locale correctly' do
@@ -80,12 +83,11 @@ describe CopyProjectJob, type: :model do
                          is_for_all: true)
     }
     let(:copy_job) {
-      CopyProjectJob.new admin,
-                         source_project,
-                         params,
-                         [], # enabled modules
-                         [:work_packages], # associations
-                         false
+      CopyProjectJob.new user_id: admin.id,
+                         source_project_id: source_project.id,
+                         target_project_params: params,
+                         enabled_modules: [],
+                         associations_to_copy: [:work_packages]
     } # send mails
     let(:params) { { name: 'Copy', identifier: 'copy', type_ids: [type.id], work_package_custom_field_ids: [custom_field.id] } }
     let(:expected_error_message) { "#{WorkPackage.model_name.human} '#{work_package.type.name} #: #{work_package.subject}': #{custom_field.name} #{I18n.t('errors.messages.blank')}." }
@@ -100,7 +102,7 @@ describe CopyProjectJob, type: :model do
       # (see https://github.com/collectiveidea/delayed_job#rails-3-mailers).
       # Thus, we need to return a message object here, otherwise 'Delayed Job'
       # will complain about an object without a method #deliver.
-      allow(UserMailer).to receive(:copy_project_succeeded).and_return(double('Mail::Message', deliver: true))
+      allow(UserMailer).to receive(:copy_project_succeeded).and_return(maildouble)
 
       @copied_project, @errors = copy_job.send(:create_project_copy,
                                                source_project,
@@ -111,7 +113,7 @@ describe CopyProjectJob, type: :model do
     end
 
     it 'copies the project' do
-      expect(Project.find_by_identifier(params[:identifier])).to eq(@copied_project)
+      expect(Project.find_by(identifier: params[:identifier])).to eq(@copied_project)
     end
 
     it 'sets descriptive validation errors' do
@@ -121,20 +123,18 @@ describe CopyProjectJob, type: :model do
 
   shared_context 'copy project' do
     before do
-      copy_project_job = CopyProjectJob.new(user,
-                                            project_to_copy,
-                                            params,
-                                            [],
-                                            [:members],
-                                            false)
-
+      copy_project_job = CopyProjectJob.new(user_id: user.id,
+                                            source_project_id: project_to_copy.id,
+                                            target_project_params: params,
+                                            enabled_modules: [],
+                                            associations_to_copy: [:members])
       copy_project_job.perform
     end
   end
 
   describe 'perform' do
     before do
-      allow(User).to receive(:current).and_return(user)
+      login_as(user)
       expect(User).to receive(:current=).with(user)
     end
 
@@ -143,7 +143,7 @@ describe CopyProjectJob, type: :model do
       let(:subproject) { FactoryGirl.create(:project, parent: project) }
 
       describe 'invalid parent' do
-        before { expect(UserMailer).to receive(:copy_project_failed).and_return(double('mailer', deliver: true)) }
+        before do expect(UserMailer).to receive(:copy_project_failed).and_return(maildouble) end
 
         include_context 'copy project' do
           let(:project_to_copy) { subproject }
@@ -162,7 +162,7 @@ describe CopyProjectJob, type: :model do
         }
 
         before do
-          expect(UserMailer).to receive(:copy_project_succeeded).and_return(double('mailer', deliver: true))
+          expect(UserMailer).to receive(:copy_project_succeeded).and_return(maildouble)
 
           member_add_subproject
         end
@@ -171,7 +171,7 @@ describe CopyProjectJob, type: :model do
           let(:project_to_copy) { subproject }
         end
 
-        subject { Project.find_by_identifier('copy') }
+        subject { Project.find_by(identifier: 'copy') }
 
         it { expect(subject).not_to be_nil }
 

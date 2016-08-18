@@ -34,7 +34,6 @@ Feature: Copying a work package
     Given there is 1 project with the following:
       | identifier | project_2 |
       | name       | project_2 |
-
     And I am working in project "project_2"
     And there are the following issue status:
       | name        | is_closed  | is_default  |
@@ -49,7 +48,6 @@ Feature: Copying a work package
       | name   | High |
     And there is a issuepriority with:
       | name   | Immediate |
-
     And I am working in project "project_1"
     And there are the following issue status:
       | name        | is_closed  | is_default  |
@@ -63,7 +61,6 @@ Feature: Copying a work package
       | name   | High |
     And there is a issuepriority with:
       | name   | Immediate |
-
     And there is a role "member"
     And the role "member" may have the following rights:
       | view_work_packages |
@@ -72,69 +69,54 @@ Feature: Copying a work package
       | login | bob |
     And the user "bob" is a "member" in the project "project_1"
     And the user "bob" is a "member" in the project "project_2"
-
     And there are the following issues in project "project_1":
       | subject | type |
       | issue1  | Bug  |
       | issue2  | Bug  |
-
     And there are the following issues in project "project_2":
       | subject | type    |
       | issue3  | Feature |
-
     And the work package "issue1" has the following children:
       | issue2 |
-
     And I am already logged in as "bob"
 
+  @javascript @selenium
   Scenario: Copy an issue
     When I go to the move new page of the work package "issue1"
      And I select "project_2" from "Project"
-
     When I click "Copy and follow"
-
     Then I should see "Successful creation."
+    Then I should see "issue1" within ".wp-edit-field.subject"
      And I should see "project_2" within ".breadcrumb"
 
-  Scenario: Move an issue
-    Given the "cross_project_work_package_relations" setting is set to true
-
-    When I go to the move page of the work package "issue1"
-     And I select "project_2" from "Project"
-
-    When I click "Move and follow"
-
-    Then I should see "Successful update."
-     And I should see "project_2" within ".breadcrumb"
-
+  @javascript @selenium
   Scenario: Issue children are moved
     Given the "cross_project_work_package_relations" setting is set to true
-
     When I go to the move page of the work package "issue1"
      And I select "project_2" from "Project"
-
     When I click "Move and follow"
-    When I go to the page of the work package "issue2"
-
+    #Then I should see "Successful update."
+    Then I should see "issue1" within ".wp-edit-field.subject"
      And I should see "project_2" within ".breadcrumb"
+
 
   Scenario: Move an issue to project with missing type
     When I go to the move page of the work package "issue3"
      And I select "project_1" from "Project"
-
     When I click "Move and follow"
-
     Then I should see "Failed to save 1 work package(s) on 1 selected:"
 
-  @javascript
+
+  @javascript @selenium
   Scenario: Going to the Copy Page of 2 Work Packages via bulk edit
     When I go to the work package index page of the project called "project_1"
-     And  I open the context menu on the work packages:
+     And I open the context menu on the work packages:
        | issue1 |
        | issue2 |
      And I follow "Copy" within "#work-package-context-menu"
-     Then I should see "Copy" within "#content"
-      And I should not see "Move" within "#content"
+    Then I should see "Copy" within "#content"
+     And I should not see "Move" within "#content"
+
 
 #  FIXME: Please check this: is this the same issue as reported in #1868
 #  Scenario: Move an planning element to project with missing type

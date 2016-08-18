@@ -85,7 +85,7 @@ Feature: Project Settings
     Then the "Identifier" field should not contain "project1" within "#content"
     And  the "Name" field should not contain "project1" within "#content"
 
-  @javascript
+
   Scenario: Copy a project with parent
     Given there are the following projects of type "Copy Project":
       | project2 |
@@ -101,7 +101,7 @@ Feature: Project Settings
     And  I go to the settings page of the project "cp"
     And  I should see "project2" within "#project_parent_id"
 
-  @javascript
+
   Scenario: Copy a project with types
     Given the following types are enabled for the project called "project1":
         | Name      |
@@ -119,21 +119,21 @@ Feature: Project Settings
     Then the "Phase1" checkbox should be checked
     And  the "Phase2" checkbox should be checked
 
-  @javascript
+
   Scenario: Copy a project with Custom Fields
     Given the following work package custom fields are defined:
       | name  | type | editable | is_for_all |
       | cfBug | int  | true     | false      |
     And  I am already admin
-    And  I go to the settings page of the project "project1"
-    And  I check "cfBug" within "#content"
-    And  I press "Save" within "#content"
-    And  I follow "Copy" within "#content"
+    And  I go to the custom_fields tab of the settings page of the project "project1"
+    And  I check "cfBug"
+    And  I press "Save"
+    And  I follow "Copy"
     And  I fill in "Name" with "Copied Project"
     And  I fill in "Identifier" with "cp"
     And  I click on "Copy"
     Then I should see "Started to copy project"
-    And  I go to the settings page of the project "cp"
+    And  I go to the custom_fields tab of the settings page of the project "cp"
     Then the "cfBug" checkbox should be checked
 
   @javascript
@@ -201,7 +201,8 @@ Feature: Project Settings
     Then I should see "Started to copy project"
     And  I go to the work packages index page for the project "Copied Project"
     Then I should see "foo" within "#content"
-    And  I follow "foo" within "#content"
+    When I check "Select work package" within "tbody tr:first-of-type td.checkbox"
+    And I press "Activate Fullscreen view"
     Then I should see "Alice Alison" within "#content"
     And  I should see "foo" within "#content"
     And  I should see "Bob Bobbit" within "#content"

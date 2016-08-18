@@ -194,6 +194,9 @@ default:
   # autologin_cookie_path:
   # autologin_cookie_secure:
 
+  # Configuration of the session cookie
+  # session_cookie_name: the name of the OpenProject cookie (default: _open_project_session)
+
   # disable browser cache for security reasons
   # see: https://websecuritytool.codeplex.com/wikipage?title=Checks#http-cache-control-header-no-store
   # disable_browser_cache: true
@@ -218,20 +221,63 @@ default:
   #   Absolute path (e.g. /usr/local/bin/hg) or command name (e.g. hg.exe, bzr.exe)
   #   On Windows, *.cmd, *.bat (e.g. hg.cmd, bzr.bat) does not work.
   # manages:
-  #   Enable managed repositories for this vendor. This allows OpenProject to
-  #   take control over the given path to create and delete repositories directly
-  #   when created in the frontend.
+  #   Enable managed repositories for this vendor.
+  #   You may either specify a local path on the filesystem or an absolute URL to call when
+  #   repositories are to be created or deleted.
+  #   This allows OpenProject to take control over the given path to create and delete repositories
+  #   directly when created in the frontend.
   #
-  # Examplary configuration
+  #   When entering a URL, OpenProject will POST to this resource when repositories are created
+  #   using the following JSON-encoded payload:
+  #     - action: The action to perform (create, delete, relocate)
+  #     - identifier: The repository identifier name
+  #     - vendor: The SCM vendor of the repository to create
+  #     - project: identifier, name and ID of the associated project
+  #     - old_identifier: The identifier to the old repository (used only during relocate)
+  #
+  #   NOTE: Disabling :managed repositories using disabled_types takes precedence over this setting.
+  #
+  # insecure:
+  #   Only applies when the manages: key is set to a URL
+  #   If the given URL uses SSL, certificate checking will be disabled.
+  #   This key is set for a packaged installation by default, since it communicates locally and
+  #   these installations may often include a snakeoil certificate.
+  # mode:
+  #   The octal file mode to set the repository folder to (defaults to 0700).
+  # group:
+  #   The group that should own the repository folder.
+  #   Important: The user running OpenProject must be a member of this group in order to have the
+  #   privilege to set the group ownership.
+  #   Note: The owner is always the user that runs OpenProject!
+  #
+  # disabled_types:
+  #   Disable specific repository types for this particular vendor. This allows
+  #   to restrict the available choices a project administrator has for creating repositories
+  #   May be set as a YAML list of types or several types, separated by comma.
+  #    See the example below for available types.
+  #
+  #   Available types for git:
+  #     - :local (Local repositories, registered using a local path)
+  #     - :managed (Managed repositores, available IF :manages path is set below)
+  #   Available types for subversion:
+  #     - :existing (Existing subversion repositories by URL - local using file:/// or remote
+  #                 using one of the supported URL schemes (e.g., https://, svn+ssh:// )
+  #     - :managed (Managed repositores, available IF :manages path is set below)
+  #
+  # Exemplary configuration
   #
   # scm:
-  #   Git:
+  #   git:
   #     client_command: /usr/local/bin/git
-  #     manages: /tmp/git
-  #   Subversion:
-  #     # Use command below to override the default svn command taken from path.
+  #     disabled_types:
+  #       - :local
+  #     manages: /opt/repositories/git
+  #   subversion:
   #     client_command: /usr/local/bin/svn
-  #     manages: /tmp/svn
+  #     trustedssl: true
+  #     disabled_types:
+  #       - :existing
+  #     manages: /opt/repositories/svn
 
   # Key used to encrypt sensitive data in the database (SCM and LDAP passwords).
   # If you don't want to enable data encryption, just leave it blank.
@@ -278,6 +324,11 @@ default:
   #   global_basic_auth:
   #     user: admin
   #     password: admin
+
+
+  # By default, the legacy APIv2 allows authentication through basic auth.
+  # Uncomment the following line to restrict APIv2 access to API tokens
+  # apiv2_enable_basic_auth: false
 
 # specific configuration options for production environment
 # that overrides the default ones

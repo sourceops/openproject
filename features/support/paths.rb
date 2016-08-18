@@ -53,7 +53,7 @@ module NavigationHelpers
       project_identifier = $2.gsub("\"", '')
       tab.gsub("\"", '')
 
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
 
       if tab == ''
         "/projects/#{project_identifier}/settings"
@@ -62,34 +62,35 @@ module NavigationHelpers
       end
 
     when /^the [wW]iki [pP]age "([^\"]+)" (?:for|of) the project called "([^\"]+)"$/
-      wiki_page = Wiki.titleize($1)
+      wiki_page = $1
       project_identifier = $2.gsub("\"", '')
-      project = Project.find_by_name(project_identifier)
+      project = Project.find_by(name: project_identifier)
+
+      wiki_page.gsub!(' ', '%20')
       project_identifier = project.identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/wiki/#{wiki_page}"
 
     when /^the lost password page$/
       '/account/lost_password'
 
-     when /^the groups administration page$/
-       '/admin/groups'
+    when /^the groups administration page$/
+      '/admin/groups'
 
     when /^the admin page of pending users$/
       '/users?sort=created_on:desc&status=2'
 
     when /^the edit menu item page of the [wW]iki [pP]age "([^\"]+)" (?:for|of) the project called "([^\"]+)"$/
-      wiki_page = Wiki.titleize($1)
       project_identifier = $2.gsub("\"", '')
-      project = Project.find_by_name(project_identifier)
+      project = Project.find_by(name: project_identifier)
       project_identifier = project.identifier.gsub(' ', '%20')
-      "/projects/#{project_identifier}/wiki/#{wiki_page}/wiki_menu_item/edit"
+      "/projects/#{project_identifier}/wiki/#{$1}/wiki_menu_item/edit"
 
     when /^the [cC]ost [rR]eports page (?:of|for) the project called "([^\"]+)" without filters or groups$/
-      project_identifier = Project.find_by_name($1).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: $1).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/cost_reports?set_filter=1"
 
     when /^the [cC]ost [rR]eports page (?:of|for) the project called "([^\"]+)"$/
-      project_identifier = Project.find_by_name($1).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: $1).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/cost_reports"
 
     when /^the overall [cC]ost [rR]eports page$/
@@ -109,38 +110,38 @@ module NavigationHelpers
 
     when /^the (?:(?:overview |home ?))?page (?:for|of) the project(?: called)? "(.+)"$/
       project_identifier = $1.gsub("\"", '')
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}"
 
     when /^the activity page of the project(?: called)? "(.+)"$/
       project_identifier = $1.gsub("\"", '')
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/activity"
 
     when /^the overall activity page$/
       '/activity'
 
     when /^the page (?:for|of) the issue "([^\"]+)"$/
-      issue = WorkPackage.find_by_subject($1)
+      issue = WorkPackage.find_by(subject: $1)
       "/work_packages/#{issue.id}"
 
-    when /^the edit page (?:for|of) the issue "([^\"]+)"$/
-      issue = WorkPackage.find_by_subject($1)
-      "/issues/#{issue.id}/edit"
+    when /^the edit page (?:for|of) the work package(?: called)? "([^\"]+)"$/
+      issue = WorkPackage.find_by(subject: $1)
+      "/work_packages/#{issue.id}/activity"
 
     when /^the copy page (?:for|of) the work package "([^\"]+)"$/
-      package = WorkPackage.find_by_subject($1)
+      package = WorkPackage.find_by(subject: $1)
       project = package.project
       "/projects/#{project.identifier}/work_packages/new?copy_from=#{package.id}"
 
     when /^the work packages? index page (?:for|of) (the)? project(?: called)? (.+)$/
       project_identifier = $2.gsub("\"", '')
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/work_packages"
 
     when /^the page (?:for|of) the work package(?: called)? "([^\"]+)"$/
-      work_package = WorkPackage.find_by_subject($1)
-      "/work_packages/#{work_package.id}"
+      work_package = WorkPackage.find_by(subject: $1)
+      "/work_packages/#{work_package.id}/activity"
 
     when /^the new work_package page (?:for|of) the project called "([^\"]+)"$/
       "/projects/#{$1}/work_packages/new"
@@ -149,9 +150,10 @@ module NavigationHelpers
       Rails.application.routes.url_helpers.work_packages_bulk_path
 
     when /^the wiki index page(?: below the (.+) page)? (?:for|of) (?:the)? project(?: called)? (.+)$/
-      parent_page_title, project_identifier = $1, $2
+      parent_page_title = $1
+      project_identifier = $2
       project_identifier.gsub!("\"", '')
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
 
       if parent_page_title.present?
         parent_page_title.gsub!("\"", '')
@@ -162,16 +164,17 @@ module NavigationHelpers
       end
 
     when /^the wiki new child page below the (.+) page (?:for|of) (?:the)? project(?: called)? (.+)$/
-      parent_page_title, project_identifier = $1, $2
+      parent_page_title = $1
+      project_identifier = $2
       project_identifier.gsub!("\"", '')
       parent_page_title.gsub!("\"", '')
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
 
       "/projects/#{project_identifier}/wiki/#{parent_page_title}/new"
 
     when /^the edit page (?:for |of )(the )?role(?: called)? (.+)$/
       role_identifier = $2.gsub("\"", '')
-      role_identifier = Role.find_by_name(role_identifier).id
+      role_identifier = Role.find_by(name: role_identifier).id
       "/roles/edit/#{role_identifier}"
 
     when /^the new user page$/
@@ -196,12 +199,20 @@ module NavigationHelpers
     when /^the index page (?:for|of) users$/
       '/users'
 
+    when /^the members page of the project(?: called)? (.+)$/
+      project_identifier = $1.gsub("\"", '')
+      "/projects/#{project_identifier}/members"
+
+    when /^the new member page of the project(?: called)? (.+)$/
+      project_identifier = $1.gsub("\"", '')
+      "/projects/#{project_identifier}/members/new"
+
     when /^the global index page (?:for|of) (.+)$/
       "/#{$1.gsub(' ', '_')}"
 
     when /^the edit page (?:for |of )the version(?: called) (.+)$/
       version_name = $1.gsub("\"", '')
-      version = Version.find_by_name(version_name)
+      version = Version.find_by(name: version_name)
       "/versions/edit/#{version.id}"
 
     # this should be handled by the generic "the edit page of ..." path
@@ -222,7 +233,8 @@ module NavigationHelpers
       "/admin/groups/#{instance.id}/edit"
 
     when /^the edit page (?:for|of) (?:the )?([^\"]+?)(?: called)? "([^\"]+)"$/
-      model, identifier = $1, $2
+      model = $1
+      identifier = $2
       identifier.gsub!("\"", '')
       model = model.gsub("\"", '').gsub(/\s/, '_')
 
@@ -258,6 +270,12 @@ module NavigationHelpers
 
     when /^the [mM]y account page$/
       '/my/account'
+
+    when /^the [aA]ccess [tT]oken page$/
+      '/my/access_token'
+
+    when /^the my [sS]ettings page$/
+      '/my/settings'
 
     when /^the (administration|admin) page$/
       '/admin'
@@ -300,39 +318,37 @@ module NavigationHelpers
     when /the page of the timeline(?: "([^\"]+)")? of the project called "([^\"]+)"$/
       timeline_name = $1
       project_name = $2
-      project = Project.find_by_name(project_name)
+      project = Project.find_by(name: project_name)
       project_identifier = project.identifier.gsub(' ', '%20')
       timeline = project.timelines.detect { |t| t.name == timeline_name }
 
-      timeline_id = timeline ?
-                      "/#{timeline.id}" :
-                      ''
+      timeline_id = timeline ? "/#{timeline.id}" : ''
 
       "/projects/#{project_identifier}/timelines#{timeline_id}"
 
     when /the new timeline page of the project called "([^\"]+)"$/
       project_name = $1
-      project_identifier = Project.find_by_name(project_name).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_name).identifier.gsub(' ', '%20')
 
       "/projects/#{project_identifier}/timelines/new"
 
     when /the edit page of the timeline "([^\"]+)" of the project called "([^\"]+)"$/
       timeline_name = $1
       project_name = $2
-      project_identifier = Project.find_by_name(project_name).identifier.gsub(' ', '%20')
-      timeline = Timeline.find_by_name(timeline_name)
+      project_identifier = Project.find_by(name: project_name).identifier.gsub(' ', '%20')
+      timeline = Timeline.find_by(name: timeline_name)
       "/projects/#{project_identifier}/timelines/#{timeline.id}/edit"
 
     when /^the page of the planning element "([^\"]+)" of the project called "([^\"]+)"$/
       planning_element_name = $1
-      planning_element = WorkPackage.find_by_subject(planning_element_name)
+      planning_element = WorkPackage.find_by(subject: planning_element_name)
       "/work_packages/#{planning_element.id}"
 
     when /^the (.+) page (?:for|of) the project called "([^\"]+)"$/
       project_page = $1
       project_identifier = $2.gsub("\"", '')
       project_page = project_page.gsub(' ', '').underscore
-      project_identifier = Project.find_by_name(project_identifier).identifier.gsub(' ', '%20')
+      project_identifier = Project.find_by(name: project_identifier).identifier.gsub(' ', '%20')
       "/projects/#{project_identifier}/#{project_page}"
 
     when /^the quick reference for wiki syntax$/
@@ -345,40 +361,40 @@ module NavigationHelpers
       "/settings/plugin/#{$1}"
 
     when /^the admin page of the group called "([^"]*)"$/
-      id = Group.find_by_lastname!($1).id
+      id = Group.find_by!(lastname: $1).id
       "/admin/groups/#{id}/edit"
 
     when /^the time entry page of issue "(.+)"$/
-      issue_id = WorkPackage.find_by_subject($1).id
+      issue_id = WorkPackage.find_by(subject: $1).id
       "/work_packages/#{issue_id}/time_entries"
 
     when /^the time entry report page of issue "(.+)"$/
-      issue_id = WorkPackage.find_by_subject($1).id
+      issue_id = WorkPackage.find_by(subject: $1).id
       "/work_packages/#{issue_id}/time_entries/report"
 
     when /^the move new page of the work package "(.+)"$/
-      work_package_id = WorkPackage.find_by_subject($1).id
+      work_package_id = WorkPackage.find_by(subject: $1).id
       "/work_packages/#{work_package_id}/move/new?copy="
 
     when /^the applied query "([^\"]+)" on the work packages index page of the project "([^\"]+)"$/
-      project = Project.find_by_name($2)
-      query = project.queries.find_by_name($1)
+      project = Project.find_by(name: $2)
+      query = project.queries.find_by(name: $1)
       project_work_packages_path project, query_id: query.id
 
     when /^the move page of the work package "(.+)"$/
-      work_package_id = WorkPackage.find_by_subject($1).id
+      work_package_id = WorkPackage.find_by(subject: $1).id
       "/work_packages/#{work_package_id}/move/new"
 
     when /^the message page of message "(.+)"$/
-      message = Message.find_by_subject($1)
+      message = Message.find_by(subject: $1)
       topic_path(message)
 
     when /^the show page (for|of) version ('|")(.+)('|")$/
-      version = Version.find_by_name($3)
+      version = Version.find_by(name: $3)
       version_path(version)
 
     when /^the edit page (for|of) version ('|")(.+)('|")$/
-      version = Version.find_by_name($3)
+      version = Version.find_by(name: $3)
       edit_version_path(version)
 
     # Add more mappings here.

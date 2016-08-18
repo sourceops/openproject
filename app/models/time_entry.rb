@@ -28,15 +28,12 @@
 #++
 
 class TimeEntry < ActiveRecord::Base
-  include Redmine::SafeAttributes
   # could have used polymorphic association
   # project association here allows easy loading of time entries at project level with one database trip
   belongs_to :project
   belongs_to :work_package
   belongs_to :user
   belongs_to :activity, class_name: 'TimeEntryActivity', foreign_key: 'activity_id'
-
-  attr_protected :project_id, :user_id, :tyear, :tmonth, :tweek
 
   acts_as_customizable
 
@@ -56,18 +53,31 @@ class TimeEntry < ActiveRecord::Base
   validate :validate_project_is_set
   validate :validate_consistency_of_work_package_id
 
-  scope :visible, lambda {|*args|
-                    {
-                      include: :project,
-                      conditions: Project.allowed_to_condition(args.first || User.current, :view_time_entries)
-                    }}
+  scope :visible, -> (*args) {
+    # TODO: check whether the visibility should also be influenced by the work
+    # package the time entry is assigned to.  Currently a work package can
+    # switch projects. But as the time entry is still part of it's original
+    # project, it is unclear, whether the time entry is actually visible if the
+    # user lacks the view_work_packages permission in the moved to project.
+    includes(:project)
+      .references(:projects)
+      .where(visible_condition(args.first || User.current))
+  }
+
+  def self.visible_condition(user, table_alias: nil, project: nil)
+    options = {}
+    options[:project_alias] = table_alias if table_alias
+    options[:project] = project if project
+
+    Project.allowed_to_condition(user,
+                                 :view_time_entries,
+                                 options)
+  end
 
   scope :on_work_packages, ->(work_packages) { where(work_package_id: work_packages) }
 
   after_initialize :set_default_activity
   before_validation :set_default_project
-
-  safe_attributes 'hours', 'comments', 'work_package_id', 'activity_id', 'spent_on', 'custom_field_values'
 
   def set_default_activity
     if new_record? && activity.nil?
@@ -106,13 +116,13 @@ class TimeEntry < ActiveRecord::Base
   def self.earliest_date_for_project(project = nil)
     scope = TimeEntry.visible(User.current)
     scope = scope.where(project_id: project.hierarchy.map(&:id)) if project
-    scope.minimum(:spent_on, include: :project)
+    scope.includes(:project).minimum(:spent_on)
   end
 
   def self.latest_date_for_project(project = nil)
     scope = TimeEntry.visible(User.current)
     scope = scope.where(project_id: project.hierarchy.map(&:id)) if project
-    scope.maximum(:spent_on, include: :project)
+    scope.includes(:project).maximum(:spent_on)
   end
 
   private

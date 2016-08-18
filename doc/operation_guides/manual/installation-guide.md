@@ -1,6 +1,6 @@
-# Installation of OpenProject 4.2 with Apache on Ubuntu 14.04. LTS
+# Installation of OpenProject 5.0 with Apache on Ubuntu 14.04. LTS
 
-This tutorial helps you to deploy OpenProject 4.2. Please, aware that:
+This tutorial helps you to deploy OpenProject 5.0. Please, aware that:
 
 This guide requires that you have a clean Ubuntu 14.04 x64 installation
 with administrative rights. We have tested the installation guide on an
@@ -39,11 +39,12 @@ sudo passwd openproject #(enter desired password)
 
 ```bash
 [root@host] apt-get update -y
-[root@host] apt-get install -y zlib1g-dev build-essential \
-                    libssl-dev libreadline-dev            \
-                    libyaml-dev libgdbm-dev               \
-                    libncurses5-dev automake              \
-                    libtool bison libffi-dev git curl     \
+[root@host] apt-get install -y zlib1g-dev build-essential           \
+                    libssl-dev libreadline-dev                      \
+                    libyaml-dev libgdbm-dev                         \
+                    libncurses5-dev automake                        \
+                    imagemagick libmagickcore-dev libmagickwand-dev \
+                    libtool bison libffi-dev git curl               \
                     libxml2 libxml2-dev libxslt1-dev # nokogiri
 ```
 
@@ -84,7 +85,8 @@ mysql> QUIT
 ## Installation of Ruby
 
 The are several possibilities to install Ruby on your machine. We will
-use [rbenv](http://rbenv.org/).
+use [rbenv](http://rbenv.org/). Please be aware that the actual installation of a specific Ruby version takes some
+time to finsih.
 
 ```bash
 [root@host] su openproject --login
@@ -94,16 +96,16 @@ use [rbenv](http://rbenv.org/).
 [openproject@host] source ~/.profile
 [openproject@host] git clone https://github.com/sstephenson/ruby-build.git ~/.rbenv/plugins/ruby-build
 
-[openproject@host] rbenv install 2.1.6
+[openproject@host] rbenv install 2.3.0
 [openproject@host] rbenv rehash
-[openproject@host] rbenv global 2.1.6
+[openproject@host] rbenv global 2.3.0
 ```
 
 To check our Ruby installation we run `ruby --version`. It should output
 something very similar to:
 
 ```
-ruby 2.1.6p336 (2015-04-13 revision 50298) [x86_64-linux]
+ruby 2.3.0p0 (2015-12-25 revision 53290) [x86_64-linux]
 ```
 
 ## Installation of Node
@@ -136,20 +138,23 @@ v0.12.7
 
 ## Installation of OpenProject
 
+We will install the OpenProject Community Edition. It contains the recommended set of plugins for use
+with OpenProject. For more information, see https://github.com/opf/openproject-ce.
+
+
 ```bash
 [openproject@host] cd ~
-[openproject@host] git clone https://github.com/opf/openproject.git
-[openproject@host] cd openproject
-[openproject@host] git checkout v4.2.0 # please use actual current stable version v4.2.X
+[openproject@host] git clone https://github.com/opf/openproject-ce.git --branch stable/5 --depth 1
+[openproject@host] cd openproject-ce
 [openproject@host] gem install bundler
-[openproject@host] bundle install --deployment --without postgres sqlite rmagick development test therubyracer
+[openproject@host] bundle install --deployment --without postgres sqlite development test therubyracer docker
 [openproject@host] npm install
 ```
 
 ## Configure OpenProject
 
 Create and configure the database configuration file in config/database.yml
-(relative to the openproject-directory).
+(relative to the openproject-ce directory).
 
 ```bash
 [openproject@host] cp config/database.yml.example config/database.yml
@@ -197,6 +202,10 @@ production:                          #main level
   smtp_authentication: plain
 ```
 
+Starting with 5.0, OpenProject directly manages your repositories. To
+use this feature you have to configure OpenProject as shown
+[here](./repository-integration.md).
+
 Add this line into `configuration.yml` file at the end of the file for
 a better performance of OpenProject:
 
@@ -214,12 +223,27 @@ prevents you from such errors.
 ## Finish the Installation of OpenProject
 
 ```bash
-[openproject@host] cd ~/openproject
-[openproject@host] bundle exec rake db:create:all
-[openproject@host] bundle exec rake generate_secret_token
-[openproject@host] RAILS_ENV="production" bundle exec rake db:migrate
-[openproject@host] RAILS_ENV="production" bundle exec rake db:seed
-[openproject@host] RAILS_ENV="production" bundle exec rake assets:precompile
+[openproject@host] cd ~/openproject-ce
+[openproject@host] RAILS_ENV="production" ./bin/rake db:create
+[openproject@host] RAILS_ENV="production" ./bin/rake db:migrate
+[openproject@host] RAILS_ENV="production" ./bin/rake db:seed
+[openproject@host] RAILS_ENV="production" ./bin/rake assets:precompile
+```
+
+**NOTE:** When not specified differently, the default data loaded via db:seed will have an english localization. You can choose to seed in a different language by specifying the language via the `LOCALE` environment variable on the call to `db:seed`. E.g.
+```bash
+[openproject@all] RAILS_ENV="production" LOCALE=fr ./bin/rake db:seed
+```
+will seed the database in the french language.
+
+### Secret Token
+
+You need to generate a secret key base for the production environment with `./bin/rake secret` and make that available through the environment variable `SECRET_KEY_BASE`.
+In this installation guide, we will use the local `.profile` of the OpenProject user. You may alternatively put set the environment variable in `/etc/environment` or pass it to the server upon start manually.
+
+```bash
+[openproject@host] echo "export SECRET_KEY_BASE=$(./bin/rake secret)" >> ~/.profile
+[openproject@host] source ~/.profile
 ```
 
 ## Serve OpenProject with Apache and Passenger
@@ -242,10 +266,15 @@ Then, we prepare apache and passenger:
 
 Now, the Passenger gem is installed and integrated into apache.
 
+```bash
 [root@ubuntu] su openproject --login
-[openproject@ubuntu] cd ~/openproject
+[openproject@ubuntu] cd ~/openproject-ce
 [openproject@ubuntu] gem install passenger
 [openproject@ubuntu] passenger-install-apache2-module
+```
+
+If you are running on a Virtual Private Server, you need to make sure you have atleast 1024mb of RAM before running the `passenger-install-apache2-module`.
+
 Follow the instructions passenger provides.
 The passenger installer will ask you the question in "Which languages are you
 interested in?". We are interested only in ruby.
@@ -288,8 +317,8 @@ SetEnv EXECJS_RUNTIME Disabled
 <VirtualHost *:80>
    ServerName yourdomain.com
    # !!! Be sure to point DocumentRoot to 'public'!
-   DocumentRoot /home/openproject/openproject/public
-   <Directory /home/openproject/openproject/public>
+   DocumentRoot /home/openproject/openproject-ce/public
+   <Directory /home/openproject/openproject-ce/public>
       # This relaxes Apache security settings.
       AllowOverride all
       # MultiViews must be turned off.
@@ -297,6 +326,12 @@ SetEnv EXECJS_RUNTIME Disabled
       # Uncomment this if you're on Apache >= 2.4:
       Require all granted
    </Directory>
+
+   # Request browser to cache assets
+   <Location /assets/>
+     ExpiresActive On ExpiresDefault "access plus 1 year"
+   </Location>
+
 </VirtualHost>
 ```
 
@@ -332,10 +367,20 @@ OpenProject sends (some) mails asynchronously by using background jobs. All such
 Now, the crontab file opens in the standard editor. Add the following entry to the file:
 
 ```cron
-*/1 * * * * cd /home/openproject/openproject; /home/openproject/.rvm/gems/ruby-2.1.5/wrappers/rake jobs:workoff
+*/1 * * * * cd /home/openproject/openproject-ce; /home/openproject/.rvm/gems/ruby-2.1.5/wrappers/rake jobs:workoff
 ```
 
 This will start the worker job every minute.
+
+## Repository Integration
+
+OpenProject can (by default) browse Subversion and Git repositories, but it does not serve them to git/svn clients.
+
+We do however support an integration with the Apache webserver to create and serve repositories on the fly, including integration into the fine-grained project authorization system of OpenProject.
+
+OpenProject ships with support for so-called *managed* repositories, which can be created and maintained directly within OpenProject and are linked to a single project.
+
+The complete guide for the integration of Subversion and Git repositories can be found in the [repository integration guide](repository-integration.md).
 
 ## Follow-Ups
 
@@ -343,8 +388,8 @@ Your OpenProject installation is ready to run. However, there are some things to
 
 * Regularly backup your OpenProject installation. See the [backup guide](backup-guide.md) for details.
 * Serve OpenProject via https
-* Enable Repositories for your OpenProject projects
 * Watch for OpenProject updates. We advise to always run the latest stable version of OpenProject (especially for security updates). Information on how to perform an update can been found in the [upgrade guide](upgrade-guide.md). You can find out about new OpenProject releases in our [news](https://community.openproject.org/projects/openproject/news), or on [twitter](https://twitter.com/openproject).
+
 
 ## Plug-In Installation (Optional)
 
@@ -353,7 +398,7 @@ This step is optional.
 OpenProject can be extended by various plug-ins, which extend OpenProject's capabilities.
 For general information and a list of all plug-ins known to us, refer to to the [plug-in page](https://community.openproject.org/projects/openproject/wiki/OpenProject_Plug-Ins).
 
-OpenProject plug-ins are separated in ruby gems. You can install them by listing them in a file called `Gemfile.plugin`. An example `Gemfile.plugin` file looks like this:
+OpenProject plug-ins are separated in ruby gems. You can install them by listing them in a file called `Gemfile.plugins`. An example `Gemfile.plugins` file looks like this:
 
 ```ruby
 # Required by backlogs
@@ -363,18 +408,18 @@ gem "openproject-meeting", git: "https://github.com/finnlabs/openproject-meeting
 If you have modified the `Gemfile.plugin` file, always repeat the following steps of the OpenProject installation:
 
 ```bash
-[openproject@all] cd ~/openproject
+[openproject@all] cd ~/openproject-ce
 [openproject@all] bundle install
 [openproject@all] npm install
-[openproject@all] RAILS_ENV="production" bundle exec rake db:migrate
-[openproject@all] RAILS_ENV="production" bundle exec rake db:seed
-[openproject@all] RAILS_ENV="production" bundle exec rake assets:precompile
+[openproject@all] RAILS_ENV="production" ./bin/rake db:migrate
+[openproject@all] RAILS_ENV="production" ./bin/rake db:seed
+[openproject@all] RAILS_ENV="production" ./bin/rake assets:precompile
 ```
 
 Restart the OpenProject server afterwards:
 
 ```bash
-[openproject@all] touch ~/openproject/tmp/restart.txt
+[openproject@all] touch ~/openproject-ce/tmp/restart.txt
 ```
 
 The next web-request to the server will take longer (as the application is restarted). All subsequent request should be as fast as always.
@@ -387,14 +432,14 @@ You can find the error logs for apache here:
 <pre>/var/log/apache2/error.log</pre>
 
 The OpenProject logfile can be found here:
-<pre>/home/openproject/openproject/log/production.log</pre>
+<pre>/home/openproject/openproject-ce/log/production.log</pre>
 
 If an error occurs, it should be logged there.
 
 If you need to restart the server (for example after a configuration change), do
 
 ```bash
-[openproject@all] touch ~/openproject/tmp/restart.txt
+[openproject@all] touch ~/openproject-ce/tmp/restart.txt
 ```
 
 ## Frequently Asked Questions (FAQ)
@@ -405,7 +450,7 @@ If you need to restart the server (for example after a configuration change), do
   If you cannot login as the admin user, make sure that you have executed the `db:seed` command.
 
   ```bash
-  [openproject@all] RAILS_ENV="production" bundle exec rake db:seed
+  [openproject@all] RAILS_ENV="production" ./bin/rake db:seed
   ```
 
 * **When accessing OpenProject, I get an error page. How do I find out what went wrong?**
@@ -413,7 +458,7 @@ If you need to restart the server (for example after a configuration change), do
   Things can go wrong on different levels. You can find the apache error logs here:
   <pre>/var/log/apache2/error.log</pre>
   The OpenProject log can be found here:
-  <pre>/home/openproject/openproject/log/production.log</pre>
+  <pre>/home/openproject/openproject-ce/log/production.log</pre>
 
 * **I cannot solve an error, not even with the log files. How do I get help?**
 
@@ -430,7 +475,7 @@ If you need to restart the server (for example after a configuration change), do
   We heard that `bower install` can fail, if your server is behind a firewall which does not allow `git://` URLs. The error looks like this:
 
   ```
-  bower openproject-ui_components#with-bower ECMDERR Failed to execute "git ls-remote --tags --heads git://github.com/opf/openproject-ui_components.git", exit code of #128
+  ECMDERR Failed to execute "git ls-remote --tags --heads git://github.com/finnlabs/angular-modal.git", exit code of #128
 
   Additional error details:
   fatal: unable to connect to github.com:

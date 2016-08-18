@@ -32,11 +32,11 @@ describe 'ColumnData', type: :controller do
   include Api::Experimental::Concerns::ColumnData
 
   let(:field_format) { 'user' }
-  let(:field) { double('field', id: 1, order_statement: '', field_format: field_format) }
+  let(:field) { double('field', id: 1, order_statements: [], field_format: field_format) }
 
   describe '#column_data_type' do
     it 'should recognise custom field columns based on field format' do
-      field  = double('field', id: 1, order_statement: '', field_format: 'user')
+      field  = double('field', id: 1, order_statements: [], field_format: 'user')
       column = ::QueryCustomFieldColumn.new(field)
 
       expect(column_data_type(column)).to eq('user')
@@ -48,8 +48,6 @@ describe 'ColumnData', type: :controller do
 
       expect(column_data_type(column)).to eq('currency')
     end
-
-    xit 'should test the full gamut of types'
   end
 
   describe '#link_meta' do

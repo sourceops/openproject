@@ -36,23 +36,24 @@ class CopyProjectsController < ApplicationController
   before_filter :prepare_for_copy_project, only: [:copy, :copy_project]
 
   def copy
-    target_project_name = params[:project][:name]
+    target_project_name = permitted_params.project[:name]
     @copy_project = Project.new
-    @copy_project.safe_attributes = params[:project]
+    @copy_project.attributes = permitted_params.project
     if @copy_project.valid?
-      modules = params[:project][:enabled_module_names] || params[:enabled_modules]
-      copy_project_job = CopyProjectJob.new(User.current.id,
-                                            @project.id,
-                                            params[:project],
-                                            modules,
-                                            params[:only],
-                                            params[:notifications] == '1')
+      modules = permitted_params.project[:enabled_module_names] || params[:enabled_modules]
+
+      copy_project_job = CopyProjectJob.new(user_id: User.current.id,
+                                            source_project_id: @project.id,
+                                            target_project_params: permitted_params.project.to_hash,
+                                            enabled_modules: modules,
+                                            associations_to_copy: params[:only],
+                                            send_mails: params[:notifications] == '1')
 
       Delayed::Job.enqueue copy_project_job
       flash[:notice] = I18n.t('copy_project.started',
                               source_project_name: @project.name,
                               target_project_name: target_project_name)
-      redirect_to :back
+      redirect_to origin
     else
       from = (['admin', 'settings'].include?(params[:coming_from]) ? params[:coming_from] : 'settings')
       render action: "copy_from_#{from}"
@@ -74,11 +75,14 @@ class CopyProjectsController < ApplicationController
 
   private
 
+  def origin
+    params[:coming_from] == 'admin' ? admin_projects_path : settings_project_path(@project.id)
+  end
+
   def prepare_for_copy_project
-    @issue_custom_fields = WorkPackageCustomField.find(:all, order: "#{CustomField.table_name}.position")
-    @types = Type.all
-    @root_projects = Project.find(:all,
-                                  conditions: "parent_id IS NULL AND status = #{Project::STATUS_ACTIVE}",
-                                  order: 'name')
+    @issue_custom_fields = WorkPackageCustomField.order("#{CustomField.table_name}.position")
+    @types = ::Type.all
+    @root_projects = Project.where("parent_id IS NULL AND status = #{Project::STATUS_ACTIVE}")
+                     .order('name')
   end
 end

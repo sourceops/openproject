@@ -233,7 +233,7 @@ describe User, type: :model do
     end
 
     context 'for user with an auth source' do
-      let(:allowed_auth_source) { AuthSource.generate! }
+      let(:allowed_auth_source) { FactoryGirl.create :auth_source }
 
       context 'that allows password changes' do
         before do
@@ -247,7 +247,7 @@ describe User, type: :model do
       end
 
       context 'that does not allow password changes' do
-        let(:denied_auth_source) { AuthSource.generate! }
+        let(:denied_auth_source) { FactoryGirl.create :auth_source }
 
         before do
           def denied_auth_source.allow_password_changes?; false; end
@@ -324,7 +324,8 @@ describe User, type: :model do
     before do
       @u = User.new(firstname: 'new', lastname: 'user', mail: 'newuser@somenet.foo')
       @u.login = 'new_user'
-      @u.password, @u.password_confirmation = '', ''
+      @u.password = ''
+      @u.password_confirmation = ''
       @u.save
     end
 

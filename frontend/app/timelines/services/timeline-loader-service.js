@@ -604,7 +604,7 @@ module.exports = function($q, FilterQueryStringBuilder, Color, HistoricalPlannin
     this.loader       = new QueueingLoader(options.ajax_defaults);
     this.dataEnhancer = new DataEnhancer(timeline);
 
-    this.globalPrefix = PathHelper.staticBase + PathHelper.apiV2;
+    this.globalPrefix = PathHelper.apiV2;
 
     this.die = function () {
       this.dataEnhancer.die.apply(this.dataEnhancer, arguments);
@@ -659,8 +659,7 @@ module.exports = function($q, FilterQueryStringBuilder, Color, HistoricalPlannin
   };
 
   TimelineLoader.prototype.registerProjectReportings = function () {
-    var projectPrefix = this.globalPrefix +
-                        PathHelper.projectsPath() +
+    var projectPrefix = PathHelper.apiV2ProjectsPath() +
                         "/" +
                         this.options.project_id;
 
@@ -686,17 +685,12 @@ module.exports = function($q, FilterQueryStringBuilder, Color, HistoricalPlannin
       url += '&grouping_one=' + this.options.grouping_one.join();
     }
 
-    if (this.options.grouping_two) {
-      url += '&grouping_two=' + this.options.grouping_two.join();
-    }
-
     this.loader.register(Reporting.identifier,
                          { url : url });
   };
 
   TimelineLoader.prototype.registerGlobalElements = function () {
-    var projectPrefix = this.globalPrefix +
-                        PathHelper.projectsPath() +
+    var projectPrefix = PathHelper.apiV2ProjectsPath() +
                         "/" +
                         this.options.project_id;
 
@@ -822,8 +816,7 @@ module.exports = function($q, FilterQueryStringBuilder, Color, HistoricalPlannin
 
   TimelineLoader.prototype.registerPlanningElements = function (ids) {
     this.inChunks(ids, function (projectIdsOfPacket, i) {
-      var projectPrefix = this.globalPrefix +
-                          PathHelper.projectsPath() +
+      var projectPrefix = PathHelper.apiV2ProjectsPath() +
                           "/" +
                           projectIdsOfPacket.join(',');
 
@@ -854,8 +847,7 @@ module.exports = function($q, FilterQueryStringBuilder, Color, HistoricalPlannin
   TimelineLoader.prototype.registerPlanningElementsByID = function (ids) {
 
     this.inChunks(ids, function (planningElementIdsOfPacket, i) {
-      var projectPrefix = this.globalPrefix +
-                          PathHelper.projectsPath() +
+      var projectPrefix = PathHelper.apiV2ProjectsPath() +
                           "/" +
                           this.options.project_id;
 

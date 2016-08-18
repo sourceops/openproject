@@ -31,11 +31,10 @@ require 'spec_helper'
 describe MyController, type: :controller do
   let(:user) { FactoryGirl.create(:user) }
   before(:each) do
-    allow(User).to receive(:current).and_return(user)
+    login_as(user)
   end
 
   describe 'password change' do
-
     describe '#password' do
       before do
         get :password
@@ -67,8 +66,8 @@ describe MyController, type: :controller do
       it 'should show an error message' do
         assert_response :success
         assert_template 'password'
-        expect(user.errors.keys).to eq([:password])
-        expect(user.errors.values.flatten.join('')).to include('confirmation')
+        expect(user.errors.keys).to eq([:password_confirmation])
+        expect(user.errors.values.flatten.join('')).to include("doesn't match")
       end
     end
 
@@ -99,8 +98,8 @@ describe MyController, type: :controller do
                                new_password_confirmation: 'adminADMIN!New'
       end
 
-      it 'should redirect to the my account page' do
-        expect(response).to redirect_to('/my/account')
+      it 'should redirect to the my password page' do
+        expect(response).to redirect_to('/my/password')
       end
 
       it 'should allow the user to login with the new password' do
@@ -138,6 +137,30 @@ describe MyController, type: :controller do
 
       it "renders the 'Change password' menu entry" do
         expect(response.body).to have_selector('#menu-sidebar li a', text: 'Change password')
+      end
+    end
+  end
+
+  describe 'settings' do
+    context 'PATCH' do
+      before do
+        as_logged_in_user user do
+          user.pref.self_notified = false
+
+          patch :settings, user: { language: 'en' }
+        end
+      end
+
+      it 'does not alter the email preferences' do
+        expect(assigns(:user).pref.self_notified?).to be_falsey
+      end
+
+      it 'redirects to settings' do
+        expect(response).to redirect_to my_settings_path
+      end
+
+      it 'has a successful flash' do
+        expect(flash[:notice]).to eql I18n.t(:notice_account_updated)
       end
     end
   end

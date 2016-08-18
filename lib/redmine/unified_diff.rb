@@ -105,7 +105,8 @@ module Redmine
     end
 
     def each_line
-      prev_line_left, prev_line_right = nil, nil
+      prev_line_left = nil
+      prev_line_right = nil
       each do |line|
         spacing = prev_line_left && prev_line_right && (line.nb_line_left != prev_line_left + 1) && (line.nb_line_right != prev_line_right + 1)
         yield spacing, line
@@ -235,7 +236,7 @@ module Redmine
 
     def html_line_left
       if offsets
-        line_left.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>').html_safe
+        line_left.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
       else
         line_left
       end
@@ -243,7 +244,7 @@ module Redmine
 
     def html_line_right
       if offsets
-        line_right.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>').html_safe
+        line_right.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
       else
         line_right
       end
@@ -251,7 +252,7 @@ module Redmine
 
     def html_line
       if offsets
-        line.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>').html_safe
+        line.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
       else
         line
       end

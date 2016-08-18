@@ -39,9 +39,9 @@ See doc/COPYRIGHT.rdoc for more details.
   </div>
   <div class="form--field">
     <%= f.text_field :hexcode, required: true %>
-    <%= icon_for_color(color, :class => 'timelines-x-update-color timelines-color-properties-preview', data: { target: '#color_hexcode' }) %>
+    <%= icon_for_color(color, class: 'timelines-x-update-color timelines-color-properties-preview', data: { target: '#color_hexcode' }) %>
   </div>
 </fieldset>
 
-<%= styled_button_tag l(:button_save), class: '-highlight -with-icon icon-yes' %>
+<%= styled_button_tag l(:button_save), class: '-highlight -with-icon icon-checkmark' %>
 <%= link_to l(:button_cancel), colors_path, class: 'button' %>

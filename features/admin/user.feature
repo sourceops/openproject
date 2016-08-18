@@ -104,13 +104,14 @@ Feature: User
       | alpha |
       | beta  |
       | gamma |
+    And I wait for the AJAX requests to finish
     And I go to the memberships tab of the edit page for the user peter
     Then I should see membership to the project "project1" with the roles:
       | alpha |
       | beta  |
       | gamma |
 
-  @javascript
+  @javascript @selenium
   Scenario: re-adding a Member inside Admin Panel
     When the user "peter" is a "alpha" in the project "project1"
      And I go to the memberships tab of the edit page for the user peter

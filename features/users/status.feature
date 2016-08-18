@@ -38,26 +38,26 @@ Feature: User Status
     # logged in user as well as the "Administrator" string in the table header.
     Given the user "bobby" had too many recently failed logins
     And I filter the users list by status "active (1)"
-    Then I should not see "bobby" within ".list tbody"
-    And I should see "admin" within ".list tbody"
-    And I should not see "Anonymous" within ".list tbody"
+    Then I should not see "bobby" within ".generic-table tbody"
+    And I should see "admin" within ".generic-table tbody"
+    And I should not see "Anonymous" within ".generic-table tbody"
     And I filter the users list by status "locked temporarily (1)"
-    Then I should see "bobby" within ".list tbody"
-    And I should not see "admin" within ".list tbody"
-    And I should not see "Anonymous" within ".list tbody"
+    Then I should see "bobby" within ".generic-table tbody"
+    And I should not see "admin" within ".generic-table tbody"
+    And I should not see "Anonymous" within ".generic-table tbody"
     When the user "bobby" is locked
     And I filter the users list by status "locked permanently (1)"
-    Then I should see "bobby" within ".list tbody"
-    And I should not see "admin" within ".list tbody"
-    And I should not see "Anonymous" within ".list tbody"
+    Then I should see "bobby" within ".generic-table tbody"
+    And I should not see "admin" within ".generic-table tbody"
+    And I should not see "Anonymous" within ".generic-table tbody"
     And I filter the users list by status "locked temporarily (1)"
-    Then I should see "bobby" within ".list tbody"
-    And I should not see "admin" within ".list tbody"
-    And I should not see "Anonymous" within ".list tbody"
+    Then I should see "bobby" within ".generic-table tbody"
+    And I should not see "admin" within ".generic-table tbody"
+    And I should not see "Anonymous" within ".generic-table tbody"
     And I filter the users list by status "all (2)"
-    Then I should see "bobby" within ".list tbody"
-    And I should see "admin" within ".list tbody"
-    And I should not see "Anonymous" within ".list tbody"
+    Then I should see "bobby" within ".generic-table tbody"
+    And I should see "admin" within ".generic-table tbody"
+    And I should not see "Anonymous" within ".generic-table tbody"
 
   @javascript
   Scenario: User can be unlocked on the index page
@@ -66,7 +66,7 @@ Feature: User Status
     And I click "Unlock"
     Then I should not see "bobby"
     And I try to log in with user "bobby"
-    Then I should see "Bob Bobbit"
+    Then I should see "Bob Bobbit" as being logged in
 
   Scenario: A locked and blocked user gets unlocked and unblocked
     Given the user "bobby" is locked
@@ -74,13 +74,13 @@ Feature: User Status
     When I edit the user "bobby"
     And I click "Unlock and reset failed logins"
     When I try to log in with user "bobby"
-    Then I should see "Bob Bobbit"
+    Then I should see "Bob Bobbit" as being logged in
 
   Scenario: An active user gets locked
     When I edit the user "bobby"
     And I click "Lock permanently"
     When I try to log in with user "bobby"
-    Then I should not see "Bob Bobbit"
+    Then I should not see "Bob Bobbit" as being logged in
 
   Scenario: A registered user gets activated
     Given the user "bobby" is registered and not activated
@@ -90,4 +90,4 @@ Feature: User Status
     And I edit the user "bobby"
     And I click "Activate"
     When I try to log in with user "bobby"
-    Then I should see "Bob Bobbit"
+    Then I should see "Bob Bobbit" as being logged in

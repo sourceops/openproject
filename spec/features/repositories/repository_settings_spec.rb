@@ -28,15 +28,17 @@
 
 require 'spec_helper'
 require 'features/repositories/repository_settings_page'
+require 'features/support/components/danger_zone'
 
 describe 'Repository Settings', type: :feature, js: true do
   let(:current_user) { FactoryGirl.create (:admin) }
   let(:project) { FactoryGirl.create(:project) }
   let(:settings_page) { RepositorySettingsPage.new(project) }
+  let(:dangerzone) { DangerZone.new(page) }
 
   # Allow to override configuration values to determine
   # whether to activate managed repositories
-  let(:enabled_scms) { %w[Subversion Git] }
+  let(:enabled_scms) { %w[subversion git] }
   let(:config) { nil }
 
   before do
@@ -52,19 +54,34 @@ describe 'Repository Settings', type: :feature, js: true do
 
   shared_examples 'manages the repository' do |type|
     it 'displays the repository' do
-      expect(page).not_to have_selector('select[name="scm_vendor"]')
-      expect(find("#toggleable-attributes-group--content-#{type}", visible: true))
+      expect(page).to have_selector('select[name="scm_vendor"]')
+      expect(find("#attributes-group--content-#{type}", visible: true))
         .not_to be_nil
     end
 
     it 'deletes the repository' do
-      expect(Repository.exists?(repository)).to be true
-      find('a.icon-delete', text: I18n.t(:button_delete)).click
+      expect(Repository.exists?(repository.id)).to be true
 
-      # Confirm the notification warning
-      warning = (type == 'managed') ? '-warning.-severe' : '-warning'
-      expect(page).to have_selector(".notification-box.#{warning}")
-      find('a', text: I18n.t(:button_delete)).click
+      if type == 'managed'
+        find('a.icon-delete', text: I18n.t(:button_delete)).click
+
+        dangerzone = DangerZone.new(page)
+
+        expect(page).to have_selector(dangerzone.container_selector)
+        expect(dangerzone.disabled?).to be true
+
+        dangerzone.confirm_with('definitely not the correct value')
+        expect(dangerzone.disabled?).to be true
+
+        dangerzone.confirm_with(project.identifier)
+        expect(dangerzone.disabled?).to be false
+
+        dangerzone.danger_button.click
+      else
+        find('a.icon-remove', text: I18n.t(:button_remove)).click
+        expect(page).to have_selector('.notification-box.-warning')
+        find('a', text: I18n.t(:button_remove)).click
+      end
 
       vendor = find('select[name="scm_vendor"]')
       expect(vendor).not_to be_nil
@@ -76,51 +93,80 @@ describe 'Repository Settings', type: :feature, js: true do
       expect(selected[:selected]).to be_truthy
 
       # Project should have no repository
-      expect(Repository.exists?(repository)).to be false
+      expect(Repository.exists?(repository.id)).to be false
     end
   end
 
-  shared_examples 'manages the repository with' do |name, type|
+  shared_examples 'manages the repository with' do |name, type, repository_type, project_name|
     let(:repository) {
-      FactoryGirl.create("repository_#{name.downcase}".to_sym,
+      FactoryGirl.create("repository_#{name}".to_sym,
                          scm_type: type,
                          project: project)
     }
     it_behaves_like 'manages the repository', type
   end
 
-  it_behaves_like 'manages the repository with', 'Subversion', 'existing'
-  it_behaves_like 'manages the repository with', 'Git', 'local'
+  it_behaves_like 'manages the repository with', 'subversion', 'existing', 'Subversion - Repository', 'project'
+  it_behaves_like 'manages the repository with', 'git', 'local', 'Git - Repository', 'project'
 
   context 'managed repositories' do
-    include_context 'with tmpdir'
-    let(:config) {
-      {
-        Subversion: { manages: File.join(tmpdir, 'svn') },
-        Git:        { manages: File.join(tmpdir, 'git') }
+    context 'local' do
+      include_context 'with tmpdir'
+      let(:config) {
+        {
+          subversion: { manages: File.join(tmpdir, 'svn') },
+          git: { manages: File.join(tmpdir, 'git') }
+        }
       }
-    }
 
-    let(:repository) {
-      repo = Repository.build(
-        project,
-        managed_vendor,
-        # Need to pass AC params here manually to simulate a regular repository build
-        ActionController::Parameters.new({}),
-        :managed
-      )
+      let(:repository) {
+        repo = Repository.build(
+          project,
+          managed_vendor,
+          # Need to pass AC params here manually to simulate a regular repository build
+          ActionController::Parameters.new({}),
+          :managed
+        )
 
-      repo.save!
-      repo
-    }
+        repo.save!
+        repo
+      }
 
-    context 'Subversion' do
-      let(:managed_vendor) { 'Subversion' }
-      it_behaves_like 'manages the repository', 'managed'
+      context 'Subversion' do
+        let(:managed_vendor) { :subversion }
+        it_behaves_like 'manages the repository', 'managed'
+      end
+
+      context 'Git' do
+        let(:managed_vendor) { :git }
+        it_behaves_like 'manages the repository', 'managed'
+      end
     end
 
-    context 'Git' do
-      let(:managed_vendor) { 'Git' }
+    context 'remote', webmock: true do
+      let(:url) { 'http://myreposerver.example.com/api/' }
+      let(:config) {
+        {
+          git: { manages: url }
+        }
+      }
+      let(:managed_vendor) { :git }
+      let(:repository) {
+        repo = Repository.build(
+          project,
+          managed_vendor,
+          # Need to pass AC params here manually to simulate a regular repository build
+          ActionController::Parameters.new({}),
+          :managed
+        )
+
+        stub_request(:post, url)
+          .to_return(status: 200,
+                     body: { success: true, url: 'file:///foo/bar' }.to_json)
+
+        repo.save!
+        repo
+      }
       it_behaves_like 'manages the repository', 'managed'
     end
   end

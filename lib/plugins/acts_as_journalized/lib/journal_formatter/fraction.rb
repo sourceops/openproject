@@ -27,13 +27,13 @@
 #++
 
 class JournalFormatter::Fraction < JournalFormatter::Attribute
-  # unloadable
+  include ActionView::Helpers::NumberHelper
 
   def format_values(values)
     values.map do |v|
       v.nil? ?
         nil :
-        '%0.02f' % v.to_f
+        number_with_precision(v.to_f, precision: 2)
     end
   end
 end

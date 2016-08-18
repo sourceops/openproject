@@ -26,14 +26,31 @@
 # See doc/COPYRIGHT.rdoc for more details.
 #++
 
-require 'api/v3/activities/activity_representer'
 require 'api/v3/work_packages/work_package_representer'
+require 'api/v3/work_packages/create_work_packages'
 
 module API
   module V3
     module WorkPackages
       class WorkPackagesAPI < ::API::OpenProjectAPI
         resources :work_packages do
+          helpers ::API::V3::WorkPackages::WorkPackageListHelpers
+          helpers ::API::V3::WorkPackages::CreateWorkPackages
+
+          # The enpoint needs to be mounted before the GET :work_packages/:id.
+          # Otherwise, the matcher for the :id also seems to match available_projects.
+          # This is also true when the :id param is declared to be of type: Integer.
+          mount ::API::V3::WorkPackages::AvailableProjectsOnCreateAPI
+
+          get do
+            authorize(:view_work_packages, global: true)
+            work_packages_by_params
+          end
+
+          post do
+            create_work_packages(request_body, current_user)
+          end
+
           params do
             requires :id, desc: 'Work package id'
           end
@@ -43,8 +60,11 @@ module API
               attr_reader :work_package
 
               def work_package_representer
-                WorkPackageRepresenter.create(@work_package,
-                                              current_user: current_user)
+                ::API::V3::WorkPackages::WorkPackageRepresenter.create(
+                  @work_package,
+                  current_user: current_user,
+                  embed_links: true
+                )
               end
             end
 
@@ -61,58 +81,41 @@ module API
             end
 
             patch do
-              write_work_package_attributes(@work_package, reset_lock_version: true)
+              write_work_package_attributes(@work_package, request_body, reset_lock_version: true)
 
-              send_notifications = !(params.has_key?(:notify) && params[:notify] == 'false')
-              update_service = UpdateWorkPackageService.new(
-                user: current_user,
-                work_package: @work_package,
-                send_notifications: send_notifications)
+              call = UpdateWorkPackageService
+                     .new(
+                       user: current_user,
+                       work_package: @work_package)
+                     .call(send_notifications: notify_according_to_params)
 
-              contract = UpdateContract.new(@work_package, current_user)
-              if contract.validate && update_service.save
+              if call.success?
                 @work_package.reload
 
                 work_package_representer
               else
-                fail ::API::Errors::ErrorBase.create_and_merge_errors(contract.errors)
+                fail ::API::Errors::ErrorBase.create_and_merge_errors(call.errors)
               end
             end
 
-            resource :activities do
-              helpers do
-                def save_work_package(work_package)
-                  if work_package.save
-                    Activities::ActivityRepresenter.new(work_package.journals.last,
-                                                        current_user: current_user)
-                  else
-                    fail ::API::Errors::ErrorBase.create_and_merge_errors(work_package.errors)
-                  end
-                end
-              end
+            delete do
+              authorize(:delete_work_packages, context: @work_package.project)
 
-              params do
-                requires :comment, type: String
-              end
-              post do
-                authorize({ controller: :journals, action: :new },
-                          context: @work_package.project) do
-                  raise ::API::Errors::NotFound.new
-                end
-
-                @work_package.journal_notes = params[:comment]
-
-                save_work_package(@work_package)
-              end
+              @work_package.destroy
+              status 204
             end
 
             mount ::API::V3::WorkPackages::WatchersAPI
             mount ::API::V3::Relations::RelationsAPI
+            mount ::API::V3::Activities::ActivitiesByWorkPackageAPI
             mount ::API::V3::Attachments::AttachmentsByWorkPackageAPI
+            mount ::API::V3::Repositories::RevisionsByWorkPackageAPI
             mount ::API::V3::WorkPackages::UpdateFormAPI
+            mount ::API::V3::WorkPackages::AvailableProjectsOnEditAPI
           end
 
           mount ::API::V3::WorkPackages::Schema::WorkPackageSchemasAPI
+          mount ::API::V3::WorkPackages::CreateFormAPI
         end
       end
     end

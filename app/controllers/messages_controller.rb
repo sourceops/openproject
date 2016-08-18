@@ -47,7 +47,7 @@ class MessagesController < ApplicationController
     page = params[:page]
     # Find the page of the requested reply
     if params[:r] && page.nil?
-      offset = @topic.children.count(conditions: ["#{Message.table_name}.id < ?", params[:r].to_i])
+      offset = @topic.children.where(["#{Message.table_name}.id < ?", params[:r].to_i]).count
       page = 1 + offset / REPLIES_PER_PAGE
     end
 
@@ -75,9 +75,9 @@ class MessagesController < ApplicationController
       m.board = @board
     end
 
-    @message.safe_attributes = params[:message]
+    @message.attributes = permitted_params.message(@message)
 
-    @message.attach_files(params[:attachments])
+    @message.attach_files(permitted_params.attachments)
 
     if @message.save
       call_hook(:controller_messages_new_after_save,  params: params, message: @message)
@@ -95,12 +95,12 @@ class MessagesController < ApplicationController
     @reply = Message.new
     @reply.author = User.current
     @reply.board = @board
-    @reply.safe_attributes = params[:reply]
+    @reply.attributes = permitted_params.reply
 
     @topic.children << @reply
     if !@reply.new_record?
       call_hook(:controller_messages_reply_after_save,  params: params, message: @reply)
-      attachments = Attachment.attach_files(@reply, params[:attachments])
+      attachments = Attachment.attach_files(@reply, permitted_params.attachments)
       render_attachment_warning_if_needed(@reply)
     end
     redirect_to topic_path(@topic, r: @reply)
@@ -109,16 +109,16 @@ class MessagesController < ApplicationController
   # Edit a message
   def edit
     (render_403; return false) unless @message.editable_by?(User.current)
-    @message.safe_attributes = params[:message]
+    @message.attributes = permitted_params.message(@message)
   end
 
   # Edit a message
   def update
     (render_403; return false) unless @message.editable_by?(User.current)
 
-    @message.safe_attributes = params[:message]
+    @message.attributes = permitted_params.message(@message)
 
-    @message.attach_files(params[:attachments])
+    @message.attach_files(permitted_params.attachments)
 
     if @message.save
       flash[:notice] = l(:notice_successful_update)
@@ -133,6 +133,7 @@ class MessagesController < ApplicationController
   def destroy
     (render_403; return false) unless @message.destroyable_by?(User.current)
     @message.destroy
+    flash[:notice] = l(:notice_successful_delete)
     redirect_to @message.parent.nil? ?
       { controller: '/boards', action: 'show', project_id: @project, id: @board } :
       { action: 'show', id: @message.parent, r: @message }
@@ -156,7 +157,7 @@ class MessagesController < ApplicationController
   protected
 
   def parse_preview_data
-    if params[:message]
+    if params.has_key?(:message)
       parse_preview_data_helper :message, :content
     else
       parse_preview_data_helper :reply, :content, Message

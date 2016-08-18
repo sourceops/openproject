@@ -28,17 +28,17 @@
 
 module Api::Experimental
   class QueriesController < ApplicationController
-    unloadable
-
     include ApiController
     include Api::Experimental::Concerns::GrapeRouting
     include Api::Experimental::Concerns::ColumnData
     include Api::Experimental::Concerns::QueryLoading
+    include Api::Experimental::Concerns::V3Naming
 
     include QueriesHelper
     include ExtendedHTTP
 
     before_filter :find_optional_project
+    before_filter :v3_params_as_internal, only: [:create, :update]
     before_filter :setup_query_for_create, only: [:create]
     before_filter :setup_existing_query, only: [:update, :destroy]
     before_filter :authorize_on_query, only: [:create, :destroy]
@@ -59,7 +59,7 @@ module Api::Experimental
                       else
                         WorkPackageCustomField.for_all
                       end
-      @custom_field_filters = @query.get_custom_field_options(custom_fields)
+      @custom_field_filters = @query.get_custom_field_options(custom_fields, v3_naming: true)
 
       respond_to do |format|
         format.api
@@ -67,7 +67,7 @@ module Api::Experimental
     end
 
     def grouped
-      @user_queries = visible_queries.select { |query| !query.is_public? }.map { |query| [query.name, query.id] }
+      @user_queries = visible_queries.reject(&:is_public?).map { |query| [query.name, query.id] }
       @queries = visible_queries.select(&:is_public?).map { |query| [query.name, query.id] }
 
       respond_to do |format|
@@ -160,20 +160,6 @@ module Api::Experimental
                 .reduce(:&)
 
       deny_access unless allowed
-    end
-
-    def visible_queries
-      unless @visible_queries
-        # User can see public queries and his own queries
-        visible = ARCondition.new(['is_public = ? OR user_id = ?', true, (User.current.logged? ? User.current.id : 0)])
-        # Project specific queries and global queries
-        visible << (@project.nil? ? ['project_id IS NULL'] : ['project_id IS NULL OR project_id = ?', @project.id])
-        @visible_queries = Query.find(:all,
-                                      select: 'id, name, is_public',
-                                      order: 'name ASC',
-                                      conditions: visible.conditions)
-      end
-      @visible_queries
     end
   end
 end

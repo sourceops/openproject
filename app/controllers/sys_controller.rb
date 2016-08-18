@@ -32,38 +32,36 @@ require 'open_project/repository_authentication'
 class SysController < ActionController::Base
   before_filter :check_enabled
   before_filter :require_basic_auth, only: [:repo_auth]
+  before_filter :find_project, only: [:update_required_storage]
+  before_filter :find_repository_with_storage, only: [:update_required_storage]
 
   def projects
-    p = Project.active.has_module(:repository).find(:all, include: :repository, order: 'identifier')
+    p = Project.active.has_module(:repository)
+        .includes(:repository)
+        .references(:repositories)
+        .order('identifier')
     respond_to do |format|
-      format.json { render json: p.to_json(include: :repository) }
-      format.any(:html, :xml) {  render xml: p.to_xml(include: :repository), content_type: Mime::XML }
+      format.json do
+        render json: p.to_json(include: :repository)
+      end
+      format.any(:html, :xml) do
+        render xml: p.to_xml(include: :repository), content_type: Mime::XML
+      end
     end
   end
 
-  def create_project_repository
-    project = Project.find(params[:id])
-    if project.repository
-      render nothing: true, status: 409
-    else
-      logger.info "Repository for #{project.name} was reported to be created by #{request.remote_ip}."
-      service = Scm::RepositoryFactoryService.new(project, params)
-
-      if service.build_and_save
-        project.repository = service.repository
-        render xml: project.repository, status: 201
-      else
-        render nothing: true, status: 422
-      end
-    end
+  def update_required_storage
+    result = update_storage_information(@repository, params[:force] == '1')
+    render text: "Updated: #{result}", status: 200
   end
 
   def fetch_changesets
     projects = []
     if params[:id]
-      projects << Project.active.has_module(:repository).find_by_identifier!(params[:id])
+      projects << Project.active.has_module(:repository).find_by!(identifier: params[:id])
     else
-      projects = Project.active.has_module(:repository).find(:all, include: :repository)
+      projects = Project.active.has_module(:repository)
+                 .includes(:repository).references(:repositories)
     end
     projects.each do |project|
       if project.repository
@@ -76,19 +74,25 @@ class SysController < ActionController::Base
   end
 
   def repo_auth
-    @project = Project.find_by_identifier(params[:repository])
-
-    if (%w(GET PROPFIND REPORT OPTIONS).include?(params[:method]) &&
-        @authenticated_user.allowed_to?(:browse_repository, @project)) ||
-       @authenticated_user.allowed_to?(:commit_access, @project)
+    project = Project.find_by(identifier: params[:repository])
+    if project && authorized?(project, @authenticated_user)
       render text: 'Access granted'
-      return
+    else
+      render text: 'Not allowed', status: 403 # default to deny
     end
-
-    render text: 'Not allowed', status: 403 # default to deny
   end
 
-  protected
+  private
+
+  def authorized?(project, user)
+    repository = project.repository
+
+    if repository && repository.class.authorization_policy
+      repository.class.authorization_policy.new(project, user).authorized?(params)
+    else
+      false
+    end
+  end
 
   def check_enabled
     User.current = nil
@@ -98,7 +102,33 @@ class SysController < ActionController::Base
     end
   end
 
-  private
+  def update_storage_information(repository, force = false)
+    if force
+      Delayed::Job.enqueue ::Scm::StorageUpdaterJob.new(repository)
+      true
+    else
+      repository.update_required_storage
+    end
+  end
+
+  def find_project
+    @project = Project.find(params[:id])
+  rescue ActiveRecord::RecordNotFound
+    render plain: "Could not find project ##{params[:id]}.", status: 404
+  end
+
+  def find_repository_with_storage
+    @repository = @project.repository
+
+    if @repository.nil?
+      render text: "Project ##{@project.id} does not have a repository.", status: 404
+    else
+      return true if @repository.scm.storage_available?
+      render text: 'repositories.storage.not_available', status: 400
+    end
+
+    false
+  end
 
   def require_basic_auth
     authenticate_with_http_basic do |username, password|
@@ -121,13 +151,13 @@ class SysController < ActionController::Base
     end
     user = nil
     user_id = Rails.cache.fetch(OpenProject::RepositoryAuthentication::CACHE_PREFIX + Digest::SHA1.hexdigest("#{username}#{password}"),
-                                expires_in: OpenProject::RepositoryAuthentication::CACHE_EXPIRES_AFTER) do
+                                expires_in: OpenProject::RepositoryAuthentication::CACHE_EXPIRES_AFTER) {
       user = user_login(username, password)
       user ? user.id.to_s : '-1'
-    end
+    }
 
     return nil if user_id.blank? or user_id == '-1'
 
-    user || User.find_by_id(user_id.to_i)
+    user || User.find_by(id: user_id.to_i)
   end
 end

@@ -35,13 +35,13 @@ Feature: Navigating to reports page
       | name | SubProject |
       | identifier | parent_project_1_sub_1 |
 
-@javascript
+@javascript @selenium
   Scenario: Archiving and unarchiving a project with a subproject
     Given I am already admin
     When I go to the projects admin page
     Then I should be on the projects admin page
     And I should see "Projects"
-    And I click on "Archive" within "tr.odd"
+    And I click on "Archive" within "tbody > tr:nth-of-type(1)"
     And I confirm popups
     Then I should be on the projects admin page
     And I should not see "ParentProject"
@@ -51,8 +51,8 @@ Feature: Navigating to reports page
     When I go to the page of the project called "SubProject"
     Then I should see "403"
     When I go to the projects admin page
-    When I select "all" from "status"
-    And I click on "Unarchive" within "tr.odd"
+    When I select "All" from "status"
+    And I click on "Unarchive" within "tbody > tr:nth-of-type(1)"
     Then I should be on the projects admin page
     And I should see "ParentProject"
     When I go to the page of the project called "ParentProject"

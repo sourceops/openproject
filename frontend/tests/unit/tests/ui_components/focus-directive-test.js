@@ -32,12 +32,21 @@ describe('focus Directive', function() {
   var doc, compile, element, rootScope, scope, disabledButton, timeout, body;
 
   var input = '<input type="text" name="testInput" focus id="focusTest"></input>',
-      button = '<button class="button" focus ng-disabled="true"></button>';
+      button = '<button class="button" focus disabled="true"></button>';
   element = angular.element(input);
   disabledButton = angular.element(button);
 
   beforeEach(angular.mock.module('openproject.uiComponents'));
-  beforeEach(module('openproject.templates'));
+  beforeEach(angular.mock.module('openproject.templates'));
+
+  beforeEach(angular.mock.module('openproject.uiComponents', function($provide) {
+    var configurationService = {};
+
+    configurationService.isTimezoneSet = sinon.stub().returns(false);
+    configurationService.accessibilityModeEnabled = sinon.stub().returns(false);
+
+    $provide.constant('ConfigurationService', configurationService);
+  }));
 
   beforeEach(inject(function($compile, $rootScope, $document, $timeout) {
     doc = $document[0];

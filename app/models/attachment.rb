@@ -36,8 +36,6 @@ class Attachment < ActiveRecord::Base
 
   belongs_to :author, class_name: 'User', foreign_key: 'author_id'
 
-  attr_protected :author_id
-
   validates_presence_of :container, :author, :content_type, :filesize
   validates_length_of :description, maximum: 255
 
@@ -55,6 +53,19 @@ class Attachment < ActiveRecord::Base
     if filesize > Setting.attachment_max_size.to_i.kilobytes
       errors.add(:file, :file_too_large, count: Setting.attachment_max_size.to_i.kilobytes)
     end
+  end
+
+  ##
+  # Returns an URL if the attachment is stored in an external (fog) attachment storage
+  # or nil otherwise.
+  def external_url
+    url = URI.parse file.download_url # returns a path if local
+
+    url if url.host
+  end
+
+  def external_storage?
+    !external_url.nil?
   end
 
   def increment_download
@@ -104,14 +115,14 @@ class Attachment < ActiveRecord::Base
 
   # Returns true if the file is readable
   def readable?
-    File.readable? file.local_file
+    file.readable?
   end
 
   # Bulk attaches a set of files to an object
   #
   # Returns a Hash of the results:
-  # :files => array of the attached files
-  # :unsaved => array of the files that could not be attached
+  # files: array of the attached files
+  # unsaved: array of the files that could not be attached
   def self.attach_files(obj, attachments)
     attached = []
     if attachments && attachments.is_a?(Hash)

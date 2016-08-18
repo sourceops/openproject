@@ -29,20 +29,21 @@
 class WorkPackagesPage
   include Rails.application.routes.url_helpers
   include Capybara::DSL
+  include Capybara::Select2
   include RSpec::Matchers
 
   def initialize(project = nil)
     @project = project
   end
 
-  def visit_index
-    visit index_path
+  def visit_index(work_package = nil)
+    visit index_path(work_package)
 
     ensure_index_page_loaded
   end
 
   def visit_new
-    visit new_project_work_package_path(@project)
+    visit new_project_work_packages_path(@project)
   end
 
   def visit_show(id)
@@ -57,12 +58,39 @@ class WorkPackagesPage
     visit index_path + '/calendar'
   end
 
+  def open_settings!
+    click_on 'work-packages-settings-button'
+  end
+
+  def add_column!(name)
+    open_settings!
+    click_on 'Columns ...'
+
+    search_column! name
+    select_found_column! name
+    click_on 'Apply'
+  end
+
+  def search_column!(column)
+    input = find 'input.select2-input.ui-select-search'
+    input.set column
+  end
+
+  def select_found_column!(value)
+    find('.select2-results div', text: value, match: :first).click
+  end
+
   def click_work_packages_menu_item
     find('#main-menu .work-packages').click
   end
 
   def click_toolbar_button(button)
-    find('.toolbar-container').click_button button
+    close_notifications
+    find('.toolbar-container', wait: 5).click_button button
+  end
+
+  def close_notifications
+    page.all(:css, '.notification-box--close').each(&:click)
   end
 
   def select_query(query)
@@ -71,14 +99,41 @@ class WorkPackagesPage
     ensure_index_page_loaded
   end
 
+  def select_query_from_dropdown(query)
+    within('.title-container') do
+      find('a').click
+      find('a', text: query.name).click
+    end
+  end
+
+  def expect_query(query)
+    within('.title-container') do
+      expect(page).to have_selector('a', text: query.name)
+    end
+  end
+
   def find_filter(filter_name)
     find(".advanced-filters--filters #filter_#{filter_name}")
   end
 
+  def find_subject_field(text = nil)
+    if text
+      find('#inplace-edit--write-value--subject', text: text)
+    else
+      find('#inplace-edit--write-value--subject')
+    end
+  end
+
+  def ensure_loaded
+    ensure_index_page_loaded
+  end
+
   private
 
-  def index_path
-    @project ? project_work_packages_path(@project) : work_packages_path
+  def index_path(work_package = nil)
+    path = @project ? project_work_packages_path(@project) : work_packages_path
+    path += "/details/#{work_package.id}/overview" if work_package
+    path
   end
 
   def query_path(query)
@@ -87,6 +142,9 @@ class WorkPackagesPage
 
   def ensure_index_page_loaded
     if Capybara.current_driver == Capybara.javascript_driver
+      extend ::Angular::DSL unless singleton_class.included_modules.include?(::Angular::DSL)
+      ng_wait
+
       expect(page).to have_selector('.advanced-filters--filter', visible: false)
     end
   end

@@ -31,7 +31,8 @@ module.exports = function(
   exportModal, saveModal, settingsModal,
   shareModal, sortingModal, groupingModal,
   QueryService, AuthorisationService,
-  $window, $state, $timeout) {
+  $window, $state, $timeout,
+  NotificationsService) {
   $scope.$watch('query.displaySums', function(newValue) {
     $timeout(function() {
       $scope.displaySumsLabel = (newValue) ? I18n.t('js.toolbar.settings.hide_sums')
@@ -53,10 +54,15 @@ module.exports = function(
       if( allowQueryAction(event, 'update') ) {
         QueryService.saveQuery()
           .then(function(data){
-            $scope.$emit('flashMessage', data.status);
-            $state.go('work-packages.list',
-                      { 'query_id': $scope.query.id, 'query_props': null },
-                      { notify: false });
+            if (data.status.isError) {
+              NotificationsService.addError(data.status.text);
+            }
+            else {
+              NotificationsService.addSuccess(data.status.text);
+              $state.go('work-packages.list',
+                        { 'query_id': $scope.query.id, 'query_props': null },
+                        { notify: false });
+            }
           });
       }
     }
@@ -67,11 +73,15 @@ module.exports = function(
     if( allowQueryAction(event, 'delete') && preventNewQueryAction(event) && deleteConfirmed() ){
       QueryService.deleteQuery()
         .then(function(data){
-          settingsModal.deactivate();
-          $scope.$emit('flashMessage', data.status);
-          $state.go('work-packages.list',
-                    { 'query_id': null, 'query_props': null },
-                    { reload: true });
+          if (data.status.isError) {
+              NotificationsService.addError(data.status.text);
+          }
+          else {
+            NotificationsService.addSuccess(data.status.text);
+            $state.go('work-packages.list',
+                      { 'query_id': null, 'query_props': null },
+                      { reload: true });
+          }
         });
     }
   };
@@ -81,6 +91,7 @@ module.exports = function(
     event.stopPropagation();
     if( allowQueryAction(event, 'create') ) {
       showExistingQueryModal.call(saveModal, event);
+      updateFocusInModal('save-query-name');
     }
   };
 
@@ -88,6 +99,7 @@ module.exports = function(
     event.stopPropagation();
     if (allowQueryAction(event, 'publicize') || allowQueryAction(event, 'star')) {
       showExistingQueryModal.call(shareModal, event);
+      updateFocusInModal('show-public');
     }
   };
 
@@ -95,6 +107,7 @@ module.exports = function(
     event.stopPropagation();
     if( allowQueryAction(event, 'update') ) {
       showExistingQueryModal.call(settingsModal, event);
+      updateFocusInModal('query_name');
     }
   };
 
@@ -102,22 +115,30 @@ module.exports = function(
     event.stopPropagation();
     if( allowWorkPackageAction(event, 'export') ) {
       showModal.call(exportModal);
+      setTimeout(function() {
+        updateFocusInModal(jQuery("[id^='export-']").first().attr('id'));
+      });
     }
   };
 
   $scope.showColumnsModal = function(event){
     event.stopPropagation();
     showModal.call(columnsModal);
+    setTimeout(function() {
+      updateFocusInModal(jQuery("[id^='column-']").first().attr('id'));
+    });
   };
 
   $scope.showGroupingModal = function(event){
     event.stopPropagation();
     showModal.call(groupingModal);
+    updateFocusInModal('selected_columns_new');
   };
 
   $scope.showSortingModal = function(event){
     event.stopPropagation();
     showModal.call(sortingModal);
+    updateFocusInModal('modal-sorting-attribute-0');
   };
 
   $scope.toggleDisplaySums = function(){
@@ -205,5 +226,11 @@ module.exports = function(
 
   function deleteConfirmed() {
     return $window.confirm(I18n.t('js.text_query_destroy_confirmation'));
+  }
+
+  function updateFocusInModal(element_id) {
+    setTimeout(function(){
+      jQuery('#' + element_id).focus();
+    }, 100);
   }
 };

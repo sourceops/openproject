@@ -27,11 +27,12 @@
 //++
 
 angular.module('openproject.services')
-  .service('ActivityService', ['HALAPIResource',
+  .service('ActivityService', [
     '$http',
-    'PathHelper', require('./activity-service')
+    'I18n',
+    'NotificationsService',
+    require('./activity-service')
   ])
-  .service('AuthorisationService', require('./authorisation-service'))
   .service('GroupService', ['$http', 'PathHelper', require('./group-service')])
   .service('HookService', require('./hook-service'))
   .service('KeyboardShortcutService', [
@@ -44,31 +45,6 @@ angular.module('openproject.services')
     './pagination-service')])
   .service('PriorityService', ['$http', 'PathHelper', require(
     './priority-service')])
-  .service('ProjectService', ['$http', 'PathHelper', 'FiltersHelper', require(
-    './project-service')])
-  .service('QueryService', [
-    'Query',
-    'Sortation',
-    '$http',
-    'PathHelper',
-    '$q',
-    'AVAILABLE_WORK_PACKAGE_FILTERS',
-    'StatusService',
-    'TypeService',
-    'PriorityService',
-    'UserService',
-    'VersionService',
-    'CategoryService',
-    'RoleService',
-    'GroupService',
-    'ProjectService',
-    'WorkPackagesTableHelper',
-    'I18n',
-    'queryMenuItemFactory',
-    '$rootScope',
-    'QUERY_MENU_ITEM_TYPE',
-    require('./query-service')
-  ])
   .service('RoleService', ['$http', 'PathHelper', require('./role-service')])
   .service('SortService', require('./sort-service'))
   .service('StatusService', ['$http', 'PathHelper', require('./status-service')])
@@ -77,9 +53,9 @@ angular.module('openproject.services')
     './timezone-service')])
   .service('TypeService', ['$http', 'PathHelper', require('./type-service')])
   .service('UserService', [
-    'HALAPIResource',
     '$http',
     'PathHelper',
+    'CacheService',
     require('./user-service')
   ])
   .service('VersionService', ['$http', 'PathHelper', require(
@@ -90,24 +66,9 @@ angular.module('openproject.services')
     'fields[]': 'status_id',
     'operators[status_id]': 'o'
   })
-  .service('WorkPackageService', [
-    '$http',
-    'PathHelper',
-    'WorkPackagesHelper',
-    'HALAPIResource',
-    'DEFAULT_FILTER_PARAMS',
-    'DEFAULT_PAGINATION_OPTIONS',
-    '$rootScope',
-    '$window',
-    '$q',
-    'AuthorisationService',
-    'EditableFieldsState',
-    'WorkPackageFieldService',
-    require('./work-package-service')
-  ])
-  .service('NotificationsService', [
-    'I18n',
-    '$rootScope',
-    require('./notifications-service.js')
+  .service('ApiNotificationsService', [
+    'NotificationsService',
+    'ApiHelper',
+    require('./api-notifications-service.js')
   ])
   .service('ConversionService', require('./conversion-service.js'));

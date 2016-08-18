@@ -28,14 +28,11 @@ See doc/COPYRIGHT.rdoc for more details.
 ++#%>
 
 <%= labelled_tabular_form_for @project,
-                              :url => { :action => 'modules', :id => @project },
-                              :method => :put,
-                              :html => {
-                                :id => 'modules-form'
-                              } do |form| %>
+                              url: { action: 'modules', id: @project },
+                              method: :put do |form| %>
 
   <%= render partial: "projects/form/modules",
              locals: { form: form } %>
 
-  <p><%= form.button l(:button_save), class: 'button -highlight -with-icon icon-yes' %></p>
+  <p><%= form.button l(:button_save), class: 'button -highlight -with-icon icon-checkmark' %></p>
 <% end %>

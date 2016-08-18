@@ -25,20 +25,19 @@
 //
 // See doc/COPYRIGHT.rdoc for more details.
 //++
+/* globals URI */
 
-module.exports = function(HALAPIResource, $http, PathHelper){
-
+module.exports = function(
+  $http,
+  I18n,
+  NotificationsService
+  ) {
   var ActivityService = {
-    createComment: function(workPackage, activities, descending, comment) {
-      var options = {
-        ajax: {
-          method: "POST",
-          data: JSON.stringify({ comment: comment }),
-          contentType: "application/json; charset=utf-8"
-        }
-      };
-
-      return workPackage.links.addComment.fetch(options);
+    createComment: function(workPackage, comment) {
+      return workPackage.addComment(
+        { comment: comment},
+        { 'Content-Type': 'application/json; charset=UTF-8' }
+      );
     },
 
     updateComment: function(activity, comment) {
@@ -50,7 +49,14 @@ module.exports = function(HALAPIResource, $http, PathHelper){
         }
       };
 
-      return activity.links.update.fetch(options).then(function(activity){
+      return activity.update(
+        { comment: comment },
+        { 'Content-Type': 'application/json; charset=UTF-8' }
+      ).then(function(activity) {
+        NotificationsService.addSuccess(
+          I18n.t('js.work_packages.comment_updated')
+        );
+
         return activity;
       });
     }

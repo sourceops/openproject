@@ -28,18 +28,20 @@
 #++
 
 require 'action_view/helpers/form_helper'
+require 'securerandom'
 
 class TabularFormBuilder < ActionView::Helpers::FormBuilder
   include Redmine::I18n
   include ActionView::Helpers::AssetTagHelper
   include ERB::Util
 
-  (field_helpers - %w(radio_button hidden_field fields_for label) + %w(date_select)).each do |selector|
+  (field_helpers - %i(radio_button hidden_field fields_for label) + %i(date_select)).each do |selector|
     define_method selector do |field, options = {}, *args|
       if options[:multi_locale] || options[:single_locale]
         localize_field(field, options, __method__)
       else
         options[:class] = Array(options[:class]) + [field_css_class(selector)]
+        merge_required_attributes(options[:required], options)
 
         input_options, label_options = extract_from options
 
@@ -72,6 +74,7 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
   def select(field, choices, options = {}, html_options = {})
     html_options[:class] = Array(html_options[:class]) + %w(form--select)
 
+    merge_required_attributes(options[:required], html_options)
     label_for_field(field, options) + container_wrap_field(super, 'select', options)
   end
 
@@ -82,19 +85,20 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
   end
 
   def collection_check_box(field,
-                           value,
+                           checked_value,
                            checked,
-                           text = field.to_s + "_#{value}",
+                           text = field.to_s + "_#{checked_value}",
                            options = {})
 
-    label_for = "#{sanitized_object_name}_#{field}_#{value}".to_sym
+    label_for = "#{sanitized_object_name}_#{field}_#{checked_value}".to_sym
+    unchecked_value = options.delete(:unchecked_value) { '' }
 
     input_options = options.reverse_merge(multiple: true,
                                           checked: checked,
                                           for: label_for,
                                           label: text)
 
-    check_box(field, input_options, value, '')
+    check_box(field, input_options, checked_value, unchecked_value)
   end
 
   def fields_for_custom_fields(record_name, record_object = nil, options = {}, &block)
@@ -107,32 +111,50 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
 
   attr_reader :template
 
-  TEXT_LIKE_FIELDS = [
-    'number_field', 'password_field', 'url_field', 'telephone_field', 'email_field'
-  ].freeze
+  TEXT_LIKE_FIELDS = %i(
+    number_field password_field url_field telephone_field email_field
+  ).freeze
 
   def container_wrap_field(field_html, selector, options = {})
     ret = content_tag(:span, field_html, class: field_container_css_class(selector, options))
 
     prefix, suffix = options.values_at(:prefix, :suffix)
 
-    # TODO (Rails 4): switch to SafeBuffer#prepend
-    ret = content_tag(:span, prefix.html_safe, class: 'form--field-affix').concat(ret) if prefix
-    ret.concat content_tag(:span, suffix.html_safe, class: 'form--field-affix') if suffix
+    if prefix
+      ret.prepend content_tag(:span,
+                              prefix.html_safe,
+                              class: 'form--field-affix',
+                              id: options[:prefix_id],
+                              :'aria-hidden' => true)
+    end
+
+    if suffix
+      ret.concat content_tag(:span,
+                             suffix.html_safe,
+                             class: 'form--field-affix',
+                             id: options[:suffix_id],
+                             :'aria-hidden' => true)
+    end
 
     field_container_wrap_field(ret, options)
+  end
+
+  def merge_required_attributes(required, options = nil)
+    if required
+      options.merge!(required: true, :'aria-required' => 'true')
+    end
   end
 
   def field_container_wrap_field(field_html, options = {})
     if options[:no_label]
       field_html
     else
-      content_tag(:span, field_html, class: 'form--field-container')
+      content_tag(:span, field_html, class: options[:no_class] ? '' : 'form--field-container')
     end
   end
 
   def localize_field(field, options, meth)
-    localized_field = Proc.new do |translation_form, multiple|
+    localized_field = Proc.new do |translation_form, _multiple|
       localized_field(translation_form, meth, field, options)
     end
 
@@ -157,7 +179,7 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
     classes = if TEXT_LIKE_FIELDS.include?(selector)
                 'form--text-field-container'
               else
-                "form--#{selector.tr('_', '-')}-container"
+                "form--#{selector.to_s.tr('_', '-')}-container"
               end
 
     classes << ' ' + options.fetch(:container_class, '')
@@ -167,44 +189,76 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
 
   def field_css_class(selector)
     if TEXT_LIKE_FIELDS.include?(selector)
-      "form--text-field -#{selector.gsub(/_field$/, '')}"
+      "form--text-field -#{selector.to_s.gsub(/_field$/, '')}"
     else
-      "form--#{selector.tr('_', '-')}"
+      "form--#{selector.to_s.tr('_', '-')}"
     end
   end
 
   # Returns a label tag for the given field
   def label_for_field(field, options = {}, translation_form = nil)
-    options = options.dup
-    return ''.html_safe if options.delete(:no_label)
+    return ''.html_safe if options[:no_label]
 
-    text = if options[:label].is_a?(Symbol)
-             l(options[:label])
-           elsif options[:label]
-             options[:label]
-           elsif @object.is_a?(ActiveRecord::Base)
-             @object.class.human_attribute_name(field.to_sym)
-           else
-             l(field)
-           end
+    text = get_localized_field(field, options[:label])
+    label_options = { class: 'form--label', title: text }
 
-    label_options = { class: '',
-                      title: text }
+    content = h(text)
+    label_for_field_errors(content, label_options, field)
+    label_for_field_required(content, label_options, options[:required])
+    label_for_field_for(options, label_options, translation_form, field)
+    label_for_field_prefix(content, options)
 
+    label_options[:lang] = options[:lang]
+    label_options.reject! do |_k, v| v.nil? end
+
+    @template.label(@object_name, field, content, label_options)
+  end
+
+  def label_for_field_errors(content, options, field)
+    if @object.try(:errors) && @object.errors.include?(field)
+      options[:class] << ' -error'
+      error_label = I18n.t('errors.field_erroneous_label',
+                           full_errors: @object.errors.full_messages_for(field).join(' '))
+      content << content_tag('p', error_label, class: 'hidden-for-sighted')
+    end
+  end
+
+  def label_for_field_required(content, options, is_required)
+    if is_required
+      options[:class] << ' -required'
+      content << content_tag('span',
+                             '*',
+                             class: 'form--label-required',
+                             :'aria-hidden' => true)
+    end
+  end
+
+  def label_for_field_for(options, label_options, translation_form, field)
     id = element_id(translation_form) if translation_form
 
-    # FIXME: reenable the error handling
-    label_options[:class] << 'error' if false && @object && @object.respond_to?(:errors) && @object.errors[field] # FIXME
-    label_options[:class] << 'form--label'
-    label_options[:class] << ' -required' if options.delete(:required)
     label_options[:for] = if options[:for]
                             options[:for]
                           elsif options[:multi_locale] && id
                             id.sub(/\_id$/, "_#{field}")
                           end
-    label_options[:lang] = options[:lang]
+  end
 
-    @template.label(@object_name, field.to_s, h(text), label_options)
+  def label_for_field_prefix(content, options)
+    if options[:prefix]
+      content << content_tag(:span, options[:prefix].html_safe, class: 'hidden-for-sighted')
+    end
+  end
+
+  def get_localized_field(field, label)
+    if label.is_a?(Symbol)
+      l(label)
+    elsif label
+      label
+    elsif @object.is_a?(ActiveRecord::Base)
+      @object.class.human_attribute_name(field)
+    else
+      l(field)
+    end
   end
 
   def element_id(translation_form)
@@ -261,9 +315,9 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
       object.translations.build locale: user_locale
       object.translations
     else
-      translations = object.translations.select do |t|
+      translations = object.translations.select { |t|
         t.send(field).present?
-      end
+      }
 
       if translations.size > 0
         translations
@@ -276,7 +330,7 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
   end
 
   def add_localization_link
-    @template.content_tag :a, l(:button_add), href: '#', class: 'form--field-extra-actions add_locale'
+    @template.content_tag :a, l(:button_add), href: '#', class: 'form--field-extra-actions add_locale icon icon-add'
   end
 
   def localized_options(options, locale = :en)
@@ -297,6 +351,15 @@ class TabularFormBuilder < ActionView::Helpers::FormBuilder
   def extract_from(options)
     label_options = options.dup
     input_options = options.dup.except(:for, :label, :no_label, :prefix, :suffix)
+
+    if options[:suffix]
+      options[:suffix_id] ||= SecureRandom.uuid
+
+      input_options[:'aria-describedby'] ||= options[:suffix_id]
+    end
+    if options[:prefix]
+      options[:prefix_id] ||= SecureRandom.uuid
+    end
 
     [input_options, label_options]
   end

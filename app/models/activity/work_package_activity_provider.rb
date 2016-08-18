@@ -65,10 +65,10 @@ class Activity::WorkPackageActivityProvider < Activity::BaseActivityProvider
     state = ''
     journal = Journal.find(event['event_id'])
 
-    if journal.changed_data.empty? && !journal.initial?
+    if journal.details.empty? && !journal.initial?
       state = '-note'
     else
-      state = ActiveRecord::ConnectionAdapters::Column.value_to_boolean(event['status_closed']) ? '-closed' : '-edit'
+      state = ActiveRecord::Type::Boolean.new.type_cast_from_database(event['status_closed']) ? '-closed' : '-edit'
     end
 
     "work_package#{state}"

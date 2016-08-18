@@ -29,6 +29,8 @@
 require 'spec_helper'
 
 describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
+  include API::V3::Utilities::PathHelper
+
   let(:work_package) do
     FactoryGirl.build(:work_package,
                       start_date: Date.today.to_datetime,
@@ -38,7 +40,9 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
   end
   let(:representer) { described_class.create(work_package) }
 
-  before { allow(work_package).to receive(:lock_version).and_return(1) }
+  before do
+    allow(work_package).to receive(:lock_version).and_return(1)
+  end
 
   context 'generation' do
     subject(:generated) { representer.to_json }
@@ -58,6 +62,20 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
         it { is_expected.to have_json_type(Integer).at_path('lockVersion') }
 
         it { is_expected.to be_json_eql(work_package.lock_version.to_json).at_path('lockVersion') }
+
+        context 'with a lock version of nil (new work package)' do
+          before do
+            allow(work_package)
+              .to receive(:lock_version)
+              .and_return(nil)
+          end
+
+          it 'has a lockVersion of 0' do
+            is_expected
+              .to be_json_eql(0)
+              .at_path('lockVersion')
+          end
+        end
       end
 
       describe 'estimated hours' do
@@ -87,14 +105,26 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
           end
         end
 
-        context 'percentage done disabled' do
-          before { allow(Setting).to receive(:work_package_done_ratio).and_return('disabled') }
+        %w(disabled status).each do |setting|
+          context "work package done ratio setting on #{setting}" do
+            before do
+              allow(Setting).to receive(:work_package_done_ratio).and_return(setting)
+            end
 
-          it { is_expected.to_not have_json_path('percentageDone') }
+            it 'has no percentageDone attribute' do
+              is_expected.to_not have_json_path('percentageDone')
+            end
+          end
         end
       end
 
       describe 'startDate' do
+        before do
+          allow(work_package)
+            .to receive(:milestone?)
+            .and_return(false)
+        end
+
         it_behaves_like 'has ISO 8601 date only' do
           let(:date) { work_package.start_date }
           let(:json_path) { 'startDate' }
@@ -107,9 +137,27 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
             is_expected.to be_json_eql(nil.to_json).at_path('startDate')
           end
         end
+
+        context 'if the work_package is a milestone' do
+          before do
+            allow(work_package)
+              .to receive(:milestone?)
+              .and_return(true)
+          end
+
+          it 'has no date attribute' do
+            is_expected.to_not have_json_path('startDate')
+          end
+        end
       end
 
       describe 'dueDate' do
+        before do
+          allow(work_package)
+            .to receive(:milestone?)
+            .and_return(false)
+        end
+
         it_behaves_like 'has ISO 8601 date only' do
           let(:date) { work_package.due_date }
           let(:json_path) { 'dueDate' }
@@ -120,6 +168,51 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
 
           it 'renders as null' do
             is_expected.to be_json_eql(nil.to_json).at_path('dueDate')
+          end
+        end
+
+        context 'if the work_package is a milestone' do
+          before do
+            allow(work_package)
+              .to receive(:milestone?)
+              .and_return(true)
+          end
+
+          it 'has no date attribute' do
+            is_expected.to_not have_json_path('dueDate')
+          end
+        end
+      end
+
+      describe 'date' do
+        before do
+          allow(work_package)
+            .to receive(:milestone?)
+            .and_return(true)
+        end
+
+        it_behaves_like 'has ISO 8601 date only' do
+          let(:date) { work_package.due_date }
+          let(:json_path) { 'date' }
+        end
+
+        context 'no due date' do
+          let(:work_package) { FactoryGirl.build(:work_package, due_date: nil) }
+
+          it 'renders as null' do
+            is_expected.to be_json_eql(nil.to_json).at_path('date')
+          end
+        end
+
+        context 'if the work_package is no milestone' do
+          before do
+            allow(work_package)
+              .to receive(:milestone?)
+              .and_return(false)
+          end
+
+          it 'has no date attribute' do
+            is_expected.to_not have_json_path('date')
           end
         end
       end
@@ -140,15 +233,30 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
         it { expect(subject).to be_json_eql(link.to_json).at_path(path) }
       end
 
+      shared_examples_for 'linked property with 0 value' do |attribute, association = attribute|
+        context "with a 0 for #{attribute}_id" do
+          before do
+            work_package.send("#{association}_id=", 0)
+          end
+
+          it_behaves_like 'linked property' do
+            let(:property) { attribute }
+            let(:link) { nil }
+          end
+        end
+      end
+
       describe 'status' do
         let(:status) { FactoryGirl.build_stubbed(:status) }
 
-        before { work_package.status = status }
+        before do work_package.status = status end
 
         it_behaves_like 'linked property' do
           let(:property) { 'status' }
           let(:link) { "/api/v3/statuses/#{status.id}" }
         end
+
+        it_behaves_like 'linked property with 0 value', :status
       end
 
       describe 'assignee and responsible' do
@@ -156,53 +264,76 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
         let(:link) { "/api/v3/users/#{user.id}" }
 
         describe 'assignee' do
-          before { work_package.assigned_to = user }
+          before do work_package.assigned_to = user end
 
           it_behaves_like 'linked property' do
             let(:property) { 'assignee' }
           end
+
+          it_behaves_like 'linked property with 0 value', :assignee, :assigned_to
         end
 
         describe 'responsible' do
-          before { work_package.responsible = user }
+          before do work_package.responsible = user end
 
           it_behaves_like 'linked property' do
             let(:property) { 'responsible' }
           end
+
+          it_behaves_like 'linked property with 0 value', :responsible
         end
       end
 
       describe 'version' do
         let(:version) { FactoryGirl.build_stubbed(:version) }
 
-        before { work_package.fixed_version = version }
+        before do work_package.fixed_version = version end
 
         it_behaves_like 'linked property' do
           let(:property) { 'version' }
           let(:link) { "/api/v3/versions/#{version.id}" }
         end
+
+        it_behaves_like 'linked property with 0 value', :version, :fixed_version
       end
 
       describe 'category' do
         let(:category) { FactoryGirl.build_stubbed(:category) }
 
-        before { work_package.category = category }
+        before do work_package.category = category end
 
         it_behaves_like 'linked property' do
           let(:property) { 'category' }
           let(:link) { "/api/v3/categories/#{category.id}" }
         end
+
+        it_behaves_like 'linked property with 0 value', :category
       end
 
       describe 'priority' do
         let(:priority) { FactoryGirl.build_stubbed(:priority) }
 
-        before { work_package.priority = priority }
+        before do work_package.priority = priority end
 
         it_behaves_like 'linked property' do
           let(:property) { 'priority' }
           let(:link) { "/api/v3/priorities/#{priority.id}" }
         end
+
+        it_behaves_like 'linked property with 0 value', :priority
+      end
+
+      describe 'parent' do
+        let(:parent) { FactoryGirl.build_stubbed(:work_package) }
+
+        before do work_package.parent = parent end
+
+        it_behaves_like 'linked property' do
+          let(:property) { 'parent' }
+          let(:link) { "/api/v3/work_packages/#{parent.id}" }
+        end
+
+        it_behaves_like 'linked property with 0 value', :parent
       end
     end
 
@@ -281,40 +412,135 @@ describe ::API::V3::WorkPackages::WorkPackagePayloadRepresenter do
       end
     end
 
-    describe 'version' do
-      let(:id) { 5 }
-      let(:links) {
-        {
-          version: href
-        }
-      }
-
+    describe 'date' do
       before do
-        work_package.fixed_version_id = 1
+        allow(work_package)
+          .to receive(:milestone?)
+          .and_return(true)
       end
 
-      describe 'with a version href' do
-        let(:href) { { href: "/api/v3/versions/#{id}" } }
+      it_behaves_like 'settable ISO 8601 date only' do
+        let(:property) { :date }
+        let(:method) { :due_date }
 
-        it 'sets fixed_version_id to the specified id' do
-          expect(subject.fixed_version_id).to eql(id)
+        context 'with an ISO formatted date' do
+          let(:dateString) { '2015-01-31' }
+
+          it 'sets the start and the due_date' do
+            expect(subject.start_date).to eql(Date.new(2015, 1, 31))
+            expect(subject.due_date).to eql(Date.new(2015, 1, 31))
+          end
+        end
+      end
+    end
+
+    shared_examples_for 'linked resource' do
+      let(:path) { api_v3_paths.send(attribute_name, id) }
+      let(:association_name) { attribute_name + '_id' }
+      let(:id) { work_package.send(association_name) + 1 }
+      let(:links) {
+        Hash.new.tap do |h|
+          h[attribute_name] = href
+        end
+      }
+      let(:representer_attribute) { subject.send(association_name) }
+
+      describe 'with a valid href' do
+        let(:href) { { href: path } }
+
+        it 'sets attribute to the specified id' do
+          expect(representer_attribute).to eql(id)
         end
       end
 
       describe 'with a null href' do
         let(:href) { { href: nil } }
 
-        it 'sets fixed_version_id to nil' do
-          expect(subject.fixed_version_id).to eql(nil)
+        it 'sets attribute to nil' do
+          expect(representer_attribute).to eql(nil)
         end
       end
 
       describe 'with an invalid link' do
         let(:href) { {} }
+        !let(:old_id) { work_package.send(association_name) }
 
-        it 'leaves fixed_version_id unchanged' do
-          expect(subject.fixed_version_id).to eql(1)
+        it 'leaves attribute unchanged' do
+          expect(representer_attribute).to eql(old_id)
         end
+      end
+    end
+
+    describe 'project' do
+      it_behaves_like 'linked resource' do
+        let(:attribute_name) { 'project' }
+      end
+    end
+
+    describe 'version' do
+      before do
+        work_package.fixed_version_id = 1
+      end
+
+      it_behaves_like 'linked resource' do
+        let(:attribute_name) { 'version' }
+        let(:association_name) { 'fixed_version_id' }
+      end
+    end
+
+    describe 'type' do
+      it_behaves_like 'linked resource' do
+        let(:attribute_name) { 'type' }
+      end
+    end
+
+    describe 'status' do
+      it_behaves_like 'linked resource' do
+        let(:attribute_name) { 'status' }
+      end
+    end
+
+    describe 'assignee' do
+      before do
+        work_package.assigned_to_id = 1
+      end
+
+      it_behaves_like 'linked resource' do
+        let(:path) { api_v3_paths.user(id) }
+        let(:attribute_name) { 'assignee' }
+        let(:association_name) { 'assigned_to_id' }
+      end
+    end
+
+    describe 'responsible' do
+      before do
+        work_package.responsible_id = 1
+      end
+
+      it_behaves_like 'linked resource' do
+        let(:path) { api_v3_paths.user(id) }
+        let(:attribute_name) { 'responsible' }
+      end
+    end
+
+    describe 'category' do
+      before do
+        work_package.category_id = 1
+      end
+
+      it_behaves_like 'linked resource' do
+        let(:attribute_name) { 'category' }
+      end
+    end
+
+    describe 'parent' do
+      before do
+        work_package.parent_id = 1
+      end
+
+      it_behaves_like 'linked resource' do
+        let(:path) { api_v3_paths.work_package(id) }
+        let(:attribute_name) { 'parent' }
       end
     end
   end

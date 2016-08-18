@@ -75,59 +75,6 @@ describe Project, type: :model do
     end
   end
 
-  describe 'add_work_package' do
-    let(:project) { FactoryGirl.create(:project_with_types) }
-
-    it 'should return a new work_package' do
-      expect(project.add_work_package).to be_a(WorkPackage)
-    end
-
-    it 'should not be saved' do
-      expect(project.add_work_package).to be_new_record
-    end
-
-    it 'returned work_package should have project set to self' do
-      expect(project.add_work_package.project).to eq(project)
-    end
-
-    it "returned work_package should have type set to project's first type" do
-      expect(project.add_work_package.type).to eq(project.types.first)
-    end
-
-    it 'returned work_package should have type set to provided type' do
-      specific_type = FactoryGirl.build(:type)
-      project.types << specific_type
-
-      expect(project.add_work_package(type: specific_type).type).to eq(specific_type)
-    end
-
-    it "should raise an error if the provided type is not one of the project's types" do
-      # Load project first so that the new type is not automatically included
-      project
-      specific_type = FactoryGirl.create(:type)
-
-      expect { project.add_work_package(type: specific_type) }.to raise_error ActiveRecord::RecordNotFound
-    end
-
-    it 'returned work_package should have type set to provided type_id' do
-      specific_type = FactoryGirl.build(:type)
-      project.types << specific_type
-
-      expect(project.add_work_package(type_id: specific_type.id).type).to eq(specific_type)
-    end
-
-    it 'should set all the other attributes' do
-      attributes = { blubs: double('blubs') }
-
-      new_work_package = FactoryGirl.build_stubbed(:work_package)
-      expect(new_work_package).to receive(:attributes=).with(attributes)
-
-      allow(WorkPackage).to receive(:new).and_yield(new_work_package)
-
-      project.add_work_package(attributes)
-    end
-  end
-
   describe '#find_visible' do
     it 'should find the project by id if the user is project member' do
       become_member_with_permissions(project, user, :view_work_packages)
@@ -182,7 +129,7 @@ describe Project, type: :model do
                          roles: [role_copy_projects])
     }
     before do
-      allow(User).to receive(:current).and_return(user)
+      login_as(user)
     end
 
     context 'with permission to add subprojects' do
@@ -205,7 +152,7 @@ describe Project, type: :model do
     end
   end
 
-  describe 'avialable principles' do
+  describe 'available principles' do
     let(:user) { FactoryGirl.create(:user) }
     let(:group) { FactoryGirl.create(:group) }
     let(:role) { FactoryGirl.create(:role) }
@@ -246,6 +193,21 @@ describe Project, type: :model do
       subject { project.possible_responsibles }
 
       it_behaves_like 'respecting group assignment settings'
+    end
+  end
+
+  describe '#types_used_by_work_packages' do
+    let(:project) { FactoryGirl.create(:project_with_types) }
+    let(:type) { project.types.first }
+    let(:other_type) { project.types.second }
+    let(:project_work_package) { FactoryGirl.create(:work_package, type: type, project: project) }
+    let(:other_project_work_package) { FactoryGirl.create(:work_package, type: other_type) }
+
+    it 'returns the type used by a work package of the project' do
+      project_work_package
+      other_project_work_package
+
+      expect(project.types_used_by_work_packages).to match_array [project_work_package.type]
     end
   end
 end

@@ -28,6 +28,9 @@
 
 require 'spec_helper'
 
+# FIXME: deprecate this example and replace by 'has an untitled action link'
+# it does not work as intended (setting user has no effect, but by chance :role overrides base spec)
+# it does not check the actual href/method
 shared_examples_for 'action link' do
   let(:role) { FactoryGirl.create(:role, permissions: [:view_work_packages, :edit_work_packages]) }
   let(:user) {
@@ -35,7 +38,9 @@ shared_examples_for 'action link' do
                               member_through_role: role)
   }
 
-  before { allow(User).to receive(:current).and_return(user) }
+  let(:href) { nil }
+
+  before do login_as(user) end
 
   it { expect(subject).not_to have_json_path("_links/#{action}/href") }
 
@@ -46,6 +51,26 @@ shared_examples_for 'action link' do
     end
 
     it { expect(subject).to have_json_path("_links/#{action}/href") }
+
+    it do
+      if href
+        expect(subject).to be_json_eql(href.to_json).at_path("_links/#{action}/href")
+      end
+    end
+  end
+end
+
+shared_examples_for 'has an untitled action link' do
+  it_behaves_like 'has an untitled link'
+
+  it 'indicates the desired method' do
+    is_expected.to be_json_eql(method.to_json).at_path("_links/#{link}/method")
+  end
+
+  describe 'without permission' do
+    let(:permissions) { all_permissions - [permission] }
+
+    it_behaves_like 'has no link'
   end
 end
 
@@ -57,6 +82,11 @@ end
 shared_examples_for 'has an untitled link' do
   it { is_expected.to be_json_eql(href.to_json).at_path("_links/#{link}/href") }
   it { is_expected.not_to have_json_path("_links/#{link}/title") }
+end
+
+shared_examples_for 'has a templated link' do
+  it { is_expected.to be_json_eql(href.to_json).at_path("_links/#{link}/href") }
+  it { is_expected.to be_json_eql(true.to_json).at_path("_links/#{link}/templated") }
 end
 
 shared_examples_for 'has an empty link' do

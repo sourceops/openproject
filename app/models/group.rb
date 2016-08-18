@@ -28,12 +28,10 @@
 #++
 
 class Group < Principal
-  include ActiveModel::ForbiddenAttributesProtection
-
-  has_many :group_users
-  has_many :users, through: :group_users,
-                   after_add: :user_added,
-                   after_remove: :user_removed
+  has_and_belongs_to_many :users,
+                          join_table:   "#{table_name_prefix}group_users#{table_name_suffix}",
+                          after_add:    :user_added,
+                          after_remove: :user_removed
 
   acts_as_customizable
 
@@ -43,6 +41,20 @@ class Group < Principal
   validates_presence_of :groupname
   validate :uniqueness_of_groupname
   validates_length_of :groupname, maximum: 30
+
+  # HACK: We want to have the :preference association on the Principal to allow
+  # for eager loading preferences.
+  # However, the preferences are currently very user specific.  We therefore
+  # remove the methods added by
+  #   has_one :preference
+  # to avoid accidental assignment and usage of preferences on groups.
+  undef_method :preference,
+               :preference=,
+               :build_preference,
+               :create_preference,
+               :create_preference!
+
+  prepend Destroy
 
   def to_s
     lastname.to_s
@@ -54,7 +66,7 @@ class Group < Principal
     members.each do |member|
       next if member.project.nil?
 
-      user_member = Member.find_by_project_id_and_user_id(member.project_id, user.id)
+      user_member = Member.find_by(project_id: member.project_id, user_id: user.id)
 
       if user_member.nil?
         user_member = Member.new.tap do |m|
@@ -77,11 +89,10 @@ class Group < Principal
 
   def user_removed(user)
     members.each do |member|
-      MemberRole.find(:all,
-                      include: :member,
-                      conditions:
-                        ["#{Member.table_name}.user_id = ? AND #{MemberRole.table_name}.inherited_from IN (?)",
-                         user.id, member.member_role_ids]).each do |member_role|
+      MemberRole.includes(:member)
+        .where(["#{Member.table_name}.user_id = ? AND #{MemberRole.table_name}.inherited_from IN (?)",
+                user.id, member.member_role_ids])
+        .references(:members).each do |member_role|
         member_role.member.remove_member_role_and_destroy_member_if_last(member_role)
       end
     end
@@ -101,11 +112,10 @@ class Group < Principal
 
     deleted_user = DeletedUser.first
 
-    WorkPackage.update_all({ assigned_to_id: deleted_user.id },
-                           { assigned_to_id: id })
+    WorkPackage.where(assigned_to_id: id).update_all(assigned_to_id: deleted_user.id)
 
-    Journal::WorkPackageJournal.update_all({ assigned_to_id: deleted_user.id },
-                                           { assigned_to_id: id })
+    Journal::WorkPackageJournal.where(assigned_to_id: id)
+      .update_all(assigned_to_id: deleted_user.id)
   end
 
   def uniqueness_of_groupname

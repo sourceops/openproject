@@ -56,7 +56,8 @@ describe 'Login', type: :feature do
                         )
     end
 
-    it 'redirects to my_page after forced password change (with validation error) and first login' do
+    it 'redirects to homescreen after forced password change
+       (with validation error) and first login' do
       # first login
       visit signin_path
       within('#login-form') do
@@ -71,7 +72,7 @@ describe 'Login', type: :feature do
         fill_in('password', with: user_password)
         fill_in('new_password', with: new_user_password)
         fill_in('new_password_confirmation', with: new_user_password + 'typo')
-        click_link_or_button I18n.t(:button_apply)
+        click_link_or_button I18n.t(:button_save)
       end
       expect(current_path).to eql account_change_password_path
 
@@ -80,17 +81,11 @@ describe 'Login', type: :feature do
         fill_in('password', with: user_password)
         fill_in('new_password', with: new_user_password)
         fill_in('new_password_confirmation', with: new_user_password)
-        click_link_or_button I18n.t(:button_apply)
-      end
-      expect(current_path).to eql my_first_login_path
-
-      # we just save the form and go on
-      within('#main') do
         click_link_or_button I18n.t(:button_save)
       end
 
       # on the my page
-      expect(current_path).to eql my_page_path
+      expect(current_path).to eql '/'
     end
   end
 end

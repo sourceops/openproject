@@ -31,11 +31,11 @@ See doc/COPYRIGHT.rdoc for more details.
   <%= call_hook :search_index_head %>
 <% end %>
 <%= toolbar title: l(:label_search) %>
-<%= styled_form_tag(search_path(@project), :method => :get) do %>
+<%= styled_form_tag(search_path(@project), method: :get, id: 'search-form') do %>
   <fieldset class="simple-filters--container" id="search-filter">
     <ul class="simple-filters--filters">
       <li class="simple-filters--filter">
-        <%= styled_label_tag "search-input", l(:description_search), :class => "hidden-for-sighted simple-filters--filter-name" %>
+        <%= styled_label_tag "search-input", l(:description_search), class: "hidden-for-sighted simple-filters--filter-name" %>
         <div class="simple-filters--filter-value">
           <%= styled_text_field_tag :q, @question, id: 'search-input' %>
         </div>
@@ -46,45 +46,58 @@ See doc/COPYRIGHT.rdoc for more details.
           <%= project_select_tag %>
         </div>
       </li>
+    </ul>
+    <ul class="simple-filter--trailing-labels">
       <li class="simple-filters--filter">
-        <%= styled_label_tag :all_words, class: 'form--label-with-check-box' do %>
-          <%= styled_check_box_tag 'all_words', 1, @all_words %> <%= l(:label_all_words) %>
-        <% end %>
-        <%= styled_label_tag :titles_only, class: 'form--label-with-check-box' do %>
-          <%= styled_check_box_tag 'titles_only', 1, @titles_only %> <%= l(:label_search_titles_only) %>
-        <% end %>
-
+        <span class="form--field -trailing-label">
+          <%= styled_label_tag :all_words, l(:label_all_words) %>
+          <span class="form--field-container">
+            <%= styled_check_box_tag 'all_words', 1, @all_words %>
+          </span>
+        </span>
+        <span class="form--field -trailing-label">
+          <%= styled_label_tag :titles_only, l(:label_search_titles_only) %>
+          <span class="form--field-container">
+            <%= styled_check_box_tag 'titles_only', 1, @titles_only %>
+          </span>
+        </span>
       </li>
       <li class="simple-filters--filter">
         <% @object_types.each do |t| %>
-          <%= styled_label_tag t, class: 'form--label-with-check-box' do %>
-            <%= styled_check_box_tag t, 1, @scope.include?(t) %> <%= type_label(t) %>
-          <% end %>
+          <span class="form--field -trailing-label">
+            <%= styled_label_tag t, type_label(t) %>
+            <span class="form--field-container">
+              <%= styled_check_box_tag t, 1, @scope.include?(t) %>
+            </span>
+          </span>
         <% end %>
       </li>
     </ul>
-    <%= styled_submit_tag l(:button_submit), :name => 'submit', class: 'button -highlight -small' %>
   </fieldset>
 <% end %>
+<%= styled_submit_tag l(:button_submit), name: 'submit', form: 'search-form', class: 'button -highlight' %>
 <% if @results %>
   <div id="search-results-counts">
     <%= render_results_by_type(@results_by_type) unless @scope.size == 1 %>
   </div>
   <h3><%= l(:label_result_plural) %> (<%= @results_by_type.values.sum %>)</h3>
-  <%= render :partial => 'pagination', :locals => {:pagination_previous_date => @pagination_previous_date, :pagination_next_date => @pagination_next_date } %>
+  <%= render partial: 'pagination', locals: {pagination_previous_date: @pagination_previous_date, pagination_next_date: @pagination_next_date } %>
   <dl id="search-results">
     <% @results.each do |e| %>
       <dt class="<%= e.event_type %>">
-        <%= icon_wrapper("icon-context icon-#{e.event_type}", e.event_name) %>
+        <% event_type = e.event_type == 'meeting' ? 'meetings' : e.event_type %>
+        <% event_type = e.event_type == 'cost_object' ? 'budget' : event_type %>
+        <% event_type = e.event_type == 'reply' ? 'forums' : event_type %>
+        <%= icon_wrapper("icon-context icon-#{event_type}", e.event_name) %>
         <% if e.project != @project %>
           <span class="project"><%= e.project %></span>
         <% end %>
-        <%= link_to highlight_tokens(truncate(e.event_title, :length => 255), @tokens), with_notes_anchor(e, @tokens) %>
+        <%= link_to highlight_tokens(truncate(e.event_title, escape: false, length: 255), @tokens), with_notes_anchor(e, @tokens) %>
       </dt>
       <dd><span class="description"><%= highlight_first([last_journal(e).try(:notes), e.event_description], @tokens) %></span>
         <span class="author"><%= format_time(e.event_datetime) %></span></dd>
     <% end %>
   </dl>
 <% end %>
-<%= render :partial => 'pagination', :locals => {:pagination_previous_date => @pagination_previous_date, :pagination_next_date => @pagination_next_date } %>
+<%= render partial: 'pagination', locals: {pagination_previous_date: @pagination_previous_date, pagination_next_date: @pagination_next_date } %>
 <% html_title(l(:label_search)) -%>

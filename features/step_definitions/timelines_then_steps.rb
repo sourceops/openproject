@@ -70,11 +70,11 @@ Then(/^I should see the column "(.*?)" immediately before the column "(.*?)" in 
 end
 
 Then(/^I should see a modal window$/) do
-  steps 'Then I should see a modal window with selector "#modalDiv"'
+  steps 'Then I should see a modal window with selector "#modalDiv.ui-dialog-content"'
 end
 
 Then(/^I should not see a modal window$/) do
-  page.should_not have_selector('#modalDiv')
+  page.should_not have_selector('#modalDiv.ui-dialog-content')
 end
 
 Then(/^(.*) in the modal$/) do |step|
@@ -138,23 +138,23 @@ Then(/^the "([^"]*)" row should (not )?be marked as default$/) do |title, negati
   # TODO: This should not be a magic constant but derived from the actual table
   # header.
   if should_be_visible
-    table_row.should have_css('td:nth-child(1) span.icon-yes')
+    table_row.should have_css('td:nth-child(1) span.icon-checkmark')
   else
-    table_row.should_not have_css('td:nth-child(1) span.icon-yes')
+    table_row.should_not have_css('td:nth-child(1) span.icon-checkmark')
   end
 end
 
 Then(/^I should see that "([^"]*)" is( not)? a milestone and( not)? shown in aggregation$/) do |name, not_milestone, not_in_aggregation|
   row = page.find(:css, '.timelines-pet-name', text: Regexp.new("^#{name}$")).find(:xpath, './ancestor::tr')
 
-  nodes = row.all(:css, '.timelines-pet-is_milestone span.icon-yes')
+  nodes = row.all(:css, '.timelines-pet-is_milestone span.icon-checkmark')
   if not_milestone
     nodes.should be_empty
   else
     nodes.should_not be_empty
   end
 
-  nodes = row.all(:css, '.timelines-pet-in_aggregation span.icon-yes')
+  nodes = row.all(:css, '.timelines-pet-in_aggregation span.icon-checkmark')
   if not_in_aggregation
     nodes.should be_empty
   else
@@ -165,8 +165,11 @@ end
 Then(/^the "([^"]*)" row should (not )?be marked as allowing associations$/) do |title, negation|
   should_be_visible = !negation
 
-  table_row = page.all(:css, 'table.list tbody tr td', text: title).first.find(:xpath, './ancestor::tr')
-  nodes = table_row.all(:css, '.timelines-pt-allows_association span.icon-yes')
+  table_row = page
+              .all(:css, 'table.generic-table tbody tr td', text: title)
+              .first
+              .find(:xpath, './ancestor::tr')
+  nodes = table_row.all(:css, '.timelines-pt-allows_association span.icon-checkmark')
   if should_be_visible
     nodes.should_not be_empty
   else
@@ -185,11 +188,11 @@ Then(/^I should not see the "([^"]*)" color$/) do |name|
 end
 
 Then(/^"([^"]*)" should be the first element in the list$/) do |name|
-  should have_selector('table.list tbody tr td', text: Regexp.new("^#{name}$"))
+  should have_selector('table.generic-table tbody tr td', text: Regexp.new("^#{name}$"))
 end
 
 Then(/^"([^"]*)" should be the last element in the list$/) do |name|
-  has_css?('table.list tbody tr td', text: Regexp.new("^#{name}$"))
+  has_css?('table.generic-table tbody tr td', text: Regexp.new("^#{name}$"))
 end
 
 Then(/^I should see an? (notice|warning|error) flash stating "([^"]*)"$/) do |class_name, message|
@@ -220,7 +223,7 @@ Then(/^I should not be able to add new project associations$/) do
 end
 
 Then(/^I should (not )?see a planning element link for "([^"]*)"$/) do |negate, planning_element_subject|
-  planning_element = PlanningElement.find_by_subject(planning_element_subject)
+  planning_element = PlanningElement.find_by(subject: planning_element_subject)
   text = "*#{planning_element.id}"
 
   step %{I should #{negate}see "#{text}"}
@@ -228,7 +231,7 @@ end
 
 Then(/^I should (not )?see the timeline "([^"]*)"$/) do |negate, timeline_name|
   selector = 'div.timeline div.tl-left-main'
-  timeline = Timeline.find_by_name(timeline_name)
+  timeline = Timeline.find_by(name: timeline_name)
 
   if (negate && page.has_css?(selector)) || !negate
     timeline.project.work_packages.each do |work_package|

@@ -29,22 +29,63 @@
 module OpenProject::Plugins
   module ActsAsOpEngine
     def self.included(base)
-      base.send(:define_method, :name) do
-        ActiveSupport::Inflector.demodulize(base).downcase
+      base.send :include, InstanceMethods
+
+      base.class_eval do
+        config.autoload_paths += Dir["#{config.root}/lib/"]
+
+        config.before_configuration do |app|
+          # This is required for the routes to be loaded first
+          # as the routes should be prepended so they take precedence over the core.
+          app.config.paths['config/routes.rb'].unshift File.join(config.root, 'config', 'routes.rb')
+        end
+
+        initializer "#{engine_name}.remove_duplicate_routes", after: 'add_routing_paths' do |app|
+          # removes duplicate entry from app.routes_reloader
+          # As we prepend the plugin's routes to the load_path up front and rails
+          # adds all engines' config/routes.rb later, we have double loaded the routes
+          # This is not harmful as such but leads to duplicate routes which decreases performance
+          app.routes_reloader.paths.uniq!
+        end
+
+        initializer "#{engine_name}.register_test_paths" do |app|
+          app.config.plugins_to_test_paths << root
+        end
+
+        initializer "#{engine_name}.register_cell_view_paths" do |_app|
+          pathname = config.root.join("app/cells/views")
+
+          ::RailsCell.view_paths << pathname.to_path if pathname.exist?
+        end
+
+        # adds our factories to factory girl's load path
+        initializer "#{engine_name}.register_factories", after: 'factory_girl.set_factory_paths' do |_app|
+          FactoryGirl.definition_file_paths << File.expand_path(root.to_s + '/spec/factories') if defined?(FactoryGirl)
+        end
+
+        initializer "#{engine_name}.append_migrations" do |app|
+          unless app.root.to_s.match root.to_s
+            config.paths['db/migrate'].expanded.each do |expanded_path|
+              app.config.paths['db/migrate'] << expanded_path
+            end
+
+            ##
+            # Manually inject these paths into various places
+            # in order to re-enable chained rake tasks
+            # finding all migrations.
+            # http://blog.pivotal.io/pivotal-labs/labs/leave-your-migrations-in-your-rails-engines
+            paths = app.config.paths['db/migrate'].to_a
+            ActiveRecord::Tasks::DatabaseTasks.migrations_paths = paths
+            ActiveRecord::Migrator.migrations_paths = paths
+          end
+        end
       end
+    end
 
-      # Don't use the PatchRegistry for now, as the core classes doesn't notify of class loading
-      # Use the old config.to_prepare method, but we can hopefully someday switch to on-demand
-      # patching once the PatchRegistry works.
-
-      # base.send(:define_method, :patch) do |target, patch|
-      #   OpenProject::Plugins::PatchRegistry.register(target, patch)
-      # end
-
-      # Disable LoadDependency for the same reason
-      # base.send(:define_method, :load_dependent) do |target, *dependencies|
-      #   OpenProject::Plugins::LoadDependency.register(target, *dependencies)
-      # end
+    module InstanceMethods
+      def name
+        ActiveSupport::Inflector.demodulize(self.class).downcase
+      end
 
       # Patch classes
       #
@@ -56,9 +97,9 @@ module OpenProject::Plugins
       #  patches [:IssuesController]
       # This looks for OpenProject::XlsExport::Patches::IssuesControllerPatch
       #  in openproject/xls_export/patches/issues_controller_patch.rb
-      base.send(:define_method, :patches) do |patched_classes|
+      def patches(patched_classes)
         plugin_module = self.class.to_s.deconstantize
-        base.config.to_prepare do
+        self.class.config.to_prepare do
           patched_classes.each do |klass_name|
             patch = "#{plugin_module}::Patches::#{klass_name}Patch".constantize
             klass = klass_name.to_s.constantize
@@ -67,9 +108,9 @@ module OpenProject::Plugins
         end
       end
 
-      base.send(:define_method, :patch_with_namespace) do |*args|
+      def patch_with_namespace(*args)
         plugin_module = self.class.to_s.deconstantize
-        base.config.to_prepare do
+        self.class.config.to_prepare do
           klass_name = args.last
           patch = "#{plugin_module}::Patches::#{klass_name}Patch".constantize
           qualified_class_name = args.map(&:to_s).join('::')
@@ -79,8 +120,8 @@ module OpenProject::Plugins
       end
 
       # Define assets provided by the plugin
-      base.send(:define_method, :assets) do |assets|
-        base.initializer "#{engine_name}.precompile_assets" do |app|
+      def assets(assets)
+        self.class.initializer "#{engine_name}.precompile_assets" do |app|
           app.config.assets.precompile += assets.to_a
         end
       end
@@ -94,8 +135,8 @@ module OpenProject::Plugins
       # See PermittedParams in OpenProject for available models
       #
       # Example:
-      #  additional_permitted_attributes :user => [:registration_reason]
-      base.send(:define_method, :additional_permitted_attributes) do |attributes|
+      #  additional_permitted_attributes user: [:registration_reason]
+      def additional_permitted_attributes(attributes)
         config.to_prepare do
           ::PermittedParams.send(:add_permitted_attributes, attributes)
         end
@@ -110,8 +151,8 @@ module OpenProject::Plugins
       #                define the minimal version of OpenProject the plugin is compatible with
       #                Another common option is :author_url.
       # block:         Pass a block to the plugin (for defining permissions, menu items and the like)
-      base.send(:define_method, :register) do |gem_name, options, &block|
-        base.initializer "#{engine_name}.register_plugin" do
+      def register(gem_name, options, &block)
+        self.class.initializer "#{engine_name}.register_plugin" do
           spec = Bundler.environment.specs[gem_name][0]
 
           p = Redmine::Plugin.register engine_name.to_sym do
@@ -131,7 +172,7 @@ module OpenProject::Plugins
         # Workaround to ensure settings are available after unloading in development mode
         plugin_name = engine_name
         if options.include? :settings
-          base.class_eval do
+          self.class.class_eval do
             config.to_prepare do
               Setting.create_setting("plugin_#{plugin_name}",
                                      'default' => options[:settings][:default], 'serialized' => true)
@@ -141,7 +182,7 @@ module OpenProject::Plugins
         end
       end
 
-      base.send(:define_method, :add_api_path) do |path_name, &block|
+      def add_api_path(path_name, &block)
         config.to_prepare do
           ::API::V3::Utilities::PathHelper::ApiV3Path.class_eval do
             singleton_class.instance_eval do
@@ -151,7 +192,7 @@ module OpenProject::Plugins
         end
       end
 
-      base.send(:define_method, :add_api_endpoint) do |base_endpoint, path = nil, &block|
+      def add_api_endpoint(base_endpoint, path = nil, &block)
         config.to_prepare do
           # we are expecting the base_endpoint as string for two reasons:
           # 1. it does not seem possible to pass it as constant (auto loader not ready yet)
@@ -161,7 +202,7 @@ module OpenProject::Plugins
         end
       end
 
-      base.send(:define_method, :extend_api_response) do |*args, &block|
+      def extend_api_response(*args, &block)
         config.to_prepare do
           representer_namespace = args.map { |arg| arg.to_s.camelize }.join('::')
           representer_class     = "::API::#{representer_namespace}Representer".constantize
@@ -169,49 +210,56 @@ module OpenProject::Plugins
         end
       end
 
-      base.send(:define_method, :allow_attribute_update) do |model, actions, attribute, &block|
+      def add_api_attribute(on:,
+                            writable_for: [:create, :update],
+                            ar_name:,
+                            api_name: ar_name,
+                            &block)
         config.to_prepare do
-          model_name = model.to_s.camelize
+          model_name = on.to_s.camelize
           namespace = model_name.pluralize
-          Array(actions).each do |action|
-            contract_class = "::API::V3::#{namespace}::#{action.to_s.camelize}Contract".constantize
-            contract_class.attribute attribute, &block
+          Array(writable_for).each do |action|
+            contract_class = "::#{namespace}::#{action.to_s.camelize}Contract".constantize
+            contract_class.attribute ar_name, &block
+          end
+
+          if writable_for.any?
+            # attribute is generally writable
+            # overrides might be defined in the more specific schema implementations
+            schema_class = "::API::V3::#{namespace}::Schema::Base#{model_name}Schema".constantize
+            schema_class.register_writable_property(api_name)
           end
         end
       end
 
-      base.class_eval do
-        config.autoload_paths += Dir["#{config.root}/lib/"]
+      # Register a block to return results when an api representer's cache key is asked for.
+      #
+      # This is important for cache invalidation e.g. when another schema needs
+      # to be returned depending on whether a module is active or not.
+      #
+      # path:          The fully namespaced representer name, excluding 'API' at the
+      #                beginning and 'Representer' at the end.
+      # keys:          The block to be executed when the cache key is queried for. The block's
+      #                results will be appended to the original cache key if a cache key is already
+      #                defined. If no cache key was defined before, the block's result makes up
+      #                the whole cache key.
+      def add_api_representer_cache_key(*path,
+                                        &keys)
+        mod = Module.new
+        mod.send :define_method, :cache_key do
+          if defined?(super)
+            existing = super()
 
-        config.before_configuration do |app|
-          # This is required for the routes to be loaded first
-          # as the routes should be prepended so they take precedence over the core.
-          app.config.paths['config/routes'].unshift File.join(config.root, 'config', 'routes.rb')
-        end
-
-        initializer "#{engine_name}.remove_duplicate_routes", after: 'add_routing_paths' do |app|
-          # removes duplicate entry from app.routes_reloader
-          # As we prepend the plugin's routes to the load_path up front and rails
-          # adds all engines' config/routes.rb later, we have double loaded the routes
-          # This is not harmful as such but leads to duplicate routes which decreases performance
-          app.routes_reloader.paths.uniq!
-        end
-
-        initializer "#{engine_name}.register_test_paths" do |app|
-          app.config.plugins_to_test_paths << root
-        end
-
-        # adds our factories to factory girl's load path
-        initializer "#{engine_name}.register_factories", after: 'factory_girl.set_factory_paths' do |_app|
-          FactoryGirl.definition_file_paths << File.expand_path(root.to_s + '/spec/factories') if defined?(FactoryGirl)
-        end
-
-        initializer "#{engine_name}.append_migrations" do |app|
-          unless app.root.to_s.match root.to_s
-            config.paths['db/migrate'].expanded.each do |expanded_path|
-              app.config.paths['db/migrate'] << expanded_path
-            end
+            existing + instance_eval(&keys)
+          else
+            instance_eval(&keys)
           end
+        end
+
+        config.to_prepare do
+          representer_namespace = path.map { |arg| arg.to_s.camelize }.join('::')
+          representer_class     = "::API::#{representer_namespace}Representer".constantize
+          representer_class.prepend mod
         end
       end
     end

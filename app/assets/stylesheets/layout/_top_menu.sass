@@ -28,7 +28,7 @@
 
 #logo
   float: left
-  width: $main-menu-width - $main-menu-border-width
+  width: $main-menu-width
   height: $header-height
   background-color: $header-logo-bg-color
   .home-link
@@ -44,7 +44,7 @@
   height: $header-height
   width: 100%
   padding: 0
-  z-index: 21
+  z-index: 22
   position: relative
   border-bottom: $header-border-bottom-width solid $header-border-bottom-color
 
@@ -76,6 +76,7 @@
       @include default-font($header-item-font-color, $header-item-font-size)
       text-decoration: none
       padding: 0 10px 0 10px
+
     > a:hover
       background: $header-item-bg-hover-color
       color: $header-item-font-hover-color
@@ -90,17 +91,19 @@
       border: 2px solid $header-drop-down-border-color
       border-top: 0
       background-color: $header-drop-down-bg-color
-      li  a
-        height: 30px
-        line-height: 30px
       li
         float: none
         white-space: nowrap
+        a
+          height: 32px
+          line-height: 32px
+          font-size: 1rem
   li.open > a
     position: relative
     top: 0
     z-index: 21
-  li.last-child > ul
+  li.last-child > ul,
+  ul.drop-down--help
     left: auto
     right: 0
 
@@ -111,8 +114,9 @@
     > a
       &:after
         @include icon-common
+        font-size: 10px
         padding: 0 2px 0 9px
-        content: "\e0d2"
+        @extend .icon-pulldown:before
     &:hover
       background-color: $header-item-bg-hover-color
     &.open > a
@@ -120,8 +124,9 @@
       color: $header-item-font-hover-color
       &:after
         @include icon-common
+        font-size: 10px
         padding: 0 2px 0 9px
-        content: "\e0d4"
+        @extend .icon-pulldown-up:before
 
     li
       > a
@@ -130,6 +135,31 @@
         &:hover
           background: $header-item-bg-hover-color
           color: $header-drop-down-item-font-hover-color
+
+    > ul
+      padding: 6px 0
+
+    &.-hide-icon
+      > a:after
+        display: none
+
+  .drop-down--projects
+    > li
+      &:nth-last-child(2)
+        margin-bottom: 6px
+
+  // Hack: Neccessary because we cannot include a <hr>-tag for the separator
+  // in the wp-menu. The class is now added to the link element.
+  .drop-down--work-packages .form--separator
+    padding-bottom: 2.25rem
+
+  .drop-down
+    .form--separator
+      margin-bottom: 5px
+    .drop-down--help-headline
+      padding-left: 15px
+      color: $gray-dark
+      text-transform: uppercase
 
   #loggedas
     float: right
@@ -220,21 +250,30 @@ input.top-menu-search--input
   @include default-font($header-drop-down-projects-search-font-color, 13px)
   li
     padding: 0 10px
+    font-size: 15px
 
   .select2-search
-    background: $header-drop-down-projects-search-bg-color
-    margin: 0 0 10px 0
+    margin: 1px 0 0 0
+    color: #b3b3b3
+    border-top: 1px solid #D9D9D9
+    border-bottom: 1px solid #D9D9D9
 
-  .select2-search input
-    background: $header-drop-down-projects-search-input-bg-color image-url('magnifier.png') no-repeat 94% center
-    margin: 10px 10px
-    padding: 9px 7px 9px 10px
-    border: none
-    border-radius: 25px
+    &:before
+      color: #b3b3b3
+      top: 21px
+      right: 25px
+      font-size: 14px
+
+  .select2-search input.select2-input
+    margin: 12px 10px
+    padding: 0px 32px 0px 10px
+    border: 1px solid #D9D9D9
+    box-shadow: inset 0px 1px 3px 0px rgba(0,0,0,0.1)
     width: 92%
+    background: $header-drop-down-projects-search-input-bg-color
 
   .select2-results
-    margin: 0
+    margin: 6px 0
     padding: 0
 
     .select2-highlighted
@@ -245,7 +284,7 @@ input.top-menu-search--input
 
 #header
   height: $header-height
-  min-width: 1100px
+  min-width: 840px
   .chzn-container .chzn-results .highlighted
     background-color:  #24b3e7
 
@@ -257,3 +296,34 @@ input.top-menu-search--input
       padding: 0 9px 0
     > ul > li
       max-width: 350px
+
+#account-nav-right
+  .drop-down.last-child
+    .avatar
+      // To accommodate the padding of the help icon which exisits because of the circle
+      margin-top: -5px
+  .icon-help1:before
+    padding-right: 0
+  .icon-user
+    font-size: 18px
+
+// Temporary overwrite searchfield styles for mobile view
+// until we have a full responsive layout
+input.top-menu-search--input
+  margin: 0 0 0 20px
+  position: absolute
+  right: 0
+  top: 6px
+  z-index: 10
+
+.top-menu-search:not(.-collapsed) .top-menu-search--button
+  top: -3px
+  z-index: 10
+
+@media only screen and (max-width: 18.75rem)
+  #logo
+    max-width: 170px
+
+@media only screen and (max-width: 15rem)
+  #logo
+    display: none

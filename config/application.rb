@@ -46,9 +46,7 @@ module SimpleBenchmark
   end
 end
 
-SimpleBenchmark.bench "require 'rails/all'" do
-  require 'rails/all'
-end
+require 'rails/all'
 
 if defined?(Bundler)
   # lib directory has to be added to the load path so that
@@ -63,18 +61,27 @@ if defined?(Bundler)
   $LOAD_PATH.unshift File.dirname(__FILE__) + '/../lib'
   require 'open_project/plugins'
 
-  SimpleBenchmark.bench 'Bundler.require' do
-    Bundler.require(:default, :assets, :opf_plugins, Rails.env)
-  end
+  # Require the gems listed in Gemfile, including any gems
+  # you've limited to :test, :development, or :production.
+  Bundler.require(*Rails.groups(:opf_plugins))
 end
 
 require File.dirname(__FILE__) + '/../lib/open_project/configuration'
+require File.dirname(__FILE__) + '/../app/middleware/reset_current_user'
 
 module OpenProject
   class Application < Rails::Application
     # Settings in config/environments/* take precedence over those specified here.
     # Application configuration should go into files in config/initializers
     # -- all .rb files in that directory are automatically loaded.
+
+    # Use Rack::Deflater to gzip/deflate all the responses if the
+    # HTTP_ACCEPT_ENCODING header is set appropriately. As Rack::ETag as
+    # Rack::Deflater adds a timestamp to the content which would result in a
+    # different ETag on every request, Rack::Deflater has to be in the chain of
+    # middlewares after Rack::ETag.  #insert_before is used because on
+    # responses, the middleware stack is processed from top to bottom.
+    config.middleware.insert_before 'Rack::ETag', 'Rack::Deflater'
 
     config.middleware.swap ActionDispatch::ParamsParser,
                            'ParamsParserWithExclusion',
@@ -83,6 +90,12 @@ module OpenProject
                            }
 
     config.middleware.use Rack::Attack
+    config.middleware.use ::ResetCurrentUser
+
+    ##
+    # Support XML requests as params for APIv2
+    # TODO: Remove this and 'actionpack-xml_parser' dependency when removing V2
+    config.middleware.insert_after 'ParamsParserWithExclusion', ActionDispatch::XmlParamsParser
 
     # Custom directories with classes and modules you want to be autoloadable.
     # config.autoload_paths += %W(#{config.root}/extras)
@@ -94,9 +107,10 @@ module OpenProject
 
     # Activate observers that should always be running.
     # config.active_record.observers = :cacher, :garbage_collector, :forum_observer
-    config.active_record.observers = :journal_observer, :message_observer,
-                                     :news_observer, :wiki_content_observer,
-                                     :comment_observer, :work_package_observer
+    config.active_record.observers = :message_observer,
+                                     :news_observer,
+                                     :wiki_content_observer,
+                                     :comment_observer
 
     # Set Time.zone default to the specified zone and make Active Record auto-convert to this zone.
     # Run "rake -D time" for a list of tasks for finding time zone names. Default is UTC.
@@ -104,32 +118,16 @@ module OpenProject
 
     # The default locale is :en and all translations from config/locales/*.rb,yml are auto loaded.
     # config.i18n.load_path += Dir[Rails.root.join('my', 'locales', '*.{rb,yml}').to_s]
-    # config.i18n.default_locale = :de
+    config.i18n.default_locale = :en
+
+    # Fall back to default locale
+    config.i18n.fallbacks = true
+
+    # Enable cascade key lookup for i18n
+    I18n.backend.class.send(:include, I18n::Backend::Cascade)
 
     # Configure the default encoding used in templates for Ruby 1.9.
     config.encoding = 'utf-8'
-
-    # Configure sensitive parameters which will be filtered from the log file.
-    config.filter_parameters += [:password]
-
-    # Enable the asset pipeline
-    config.assets.enabled = true
-
-    # Whitelist assets to be precompiled.
-    #
-    # This is a workaround for an issue where the precompilation process will
-    # fail on extensionless files (README, LICENSE, etc.)
-    # See: https://github.com/sstephenson/sprockets/issues/347
-    precompile_whitelist = %w(
-      .html .erb .haml
-      .png  .jpg .gif .jpeg .ico
-      .eot  .otf .svc .woff .ttf
-      .svg
-    )
-    config.assets.precompile.shift
-    config.assets.precompile.unshift -> (path) {
-      (extension = File.extname(path)).present? and extension.in?(precompile_whitelist)
-    }
 
     # Enable escaping HTML in JSON.
     config.active_support.escape_html_entities_in_json = true
@@ -145,14 +143,8 @@ module OpenProject
       instance_eval File.read(File.join(File.dirname(__FILE__), 'additional_environment.rb'))
     end
 
-    # Enforce whitelist mode for mass assignment.
-    # This will create an empty whitelist of attributes available for mass-assignment for all models
-    # in your app. As such, your models will need to explicitly whitelist or blacklist accessible
-    # parameters by using an attr_accessible or attr_protected declaration.
-    config.active_record.whitelist_attributes = false
-
-    # Version of your assets, change this if you want to expire all your assets
-    config.assets.version = '1.0'
+    # Do not swallow errors in after_commit/after_rollback callbacks.
+    config.active_record.raise_in_transactional_callbacks = true
 
     # initialize variable for register plugin tests
     config.plugins_to_test_paths = []
@@ -175,5 +167,9 @@ module OpenProject
     config.autoload_paths += Dir[Rails.root.join('app', 'api', '*')]
 
     OpenProject::Configuration.configure_cache(config)
+
+    config.active_job.queue_adapter = :delayed_job
+
+    config.action_controller.asset_host = OpenProject::Configuration['rails_asset_host']
   end
 end

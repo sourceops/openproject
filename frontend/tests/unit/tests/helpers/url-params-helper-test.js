@@ -31,7 +31,7 @@
 describe('UrlParamsHelper', function() {
   var UrlParamsHelper, Query, PathHelper;
 
-  beforeEach(module('openproject.helpers', 'openproject.models'));
+  beforeEach(angular.mock.module('openproject.helpers', 'openproject.models'));
   beforeEach(inject(function(_UrlParamsHelper_, _Query_, _PathHelper_) {
     UrlParamsHelper = _UrlParamsHelper_;
     Query = _Query_;
@@ -150,9 +150,10 @@ describe('UrlParamsHelper', function() {
         });
 
         it('should have project path', function() {
-          var urlPattern = new RegExp(relativeUrl + '\\/projects\\/1' + queryExportSuffix);
+          var urlPattern = new RegExp(relativeUrl + queryExportSuffix);
 
-          expect(exportOptions[0].url).to.match(urlPattern);
+          expect(exportOptions[0].url).to.match(urlPattern)
+          ;
         });
       });
     };

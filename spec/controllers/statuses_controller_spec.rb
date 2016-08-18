@@ -32,7 +32,7 @@ describe StatusesController, type: :controller do
   let(:user) { FactoryGirl.create(:admin) }
   let(:status) { FactoryGirl.create(:status) }
 
-  before { allow(User).to receive(:current).and_return user }
+  before do allow(User).to receive(:current).and_return user end
 
   shared_examples_for :response do
     subject { response }
@@ -51,7 +51,7 @@ describe StatusesController, type: :controller do
   end
 
   shared_examples_for :statuses do
-    subject { Status.find_by_name(name) }
+    subject { Status.find_by(name: name) }
 
     it { is_expected.not_to be_nil }
   end
@@ -59,7 +59,7 @@ describe StatusesController, type: :controller do
   describe '#index' do
     let(:template) { 'index' }
 
-    before { get :index }
+    before do get :index end
 
     it_behaves_like :response
   end
@@ -67,7 +67,7 @@ describe StatusesController, type: :controller do
   describe '#new' do
     let(:template) { 'new' }
 
-    before { get :new }
+    before do get :new end
 
     it_behaves_like :response
   end
@@ -75,7 +75,7 @@ describe StatusesController, type: :controller do
   describe '#create' do
     let(:name) { 'New Status' }
 
-    before { post :create, status: { name: name } }
+    before do post :create, status: { name: name } end
 
     it_behaves_like :statuses
 
@@ -91,7 +91,7 @@ describe StatusesController, type: :controller do
                            is_default: true)
       }
 
-      before { get :edit, id: status_default.id }
+      before do get :edit, id: status_default.id end
 
       it_behaves_like :response
 
@@ -99,8 +99,8 @@ describe StatusesController, type: :controller do
         render_views
 
         it do
-          assert_no_tag tag: 'p',
-                        content: Status.human_attribute_name(:is_default)
+        assert_select 'p',
+                        {content: Status.human_attribute_name(:is_default)}, false
         end
       end
     end
@@ -118,12 +118,11 @@ describe StatusesController, type: :controller do
         render_views
 
         it do
-          assert_tag tag: 'div',
+        assert_select 'div',
                      content: Status.human_attribute_name(:is_default)
         end
       end
     end
-
   end
 
   describe '#update' do
@@ -132,9 +131,9 @@ describe StatusesController, type: :controller do
     before do
       status
 
-      put :update,
-          id: status.id,
-          status: { name: name }
+      patch :update,
+            id: status.id,
+            status: { name: name }
     end
 
     it_behaves_like :statuses
@@ -146,7 +145,7 @@ describe StatusesController, type: :controller do
     let(:name) { status.name }
 
     shared_examples_for :destroyed do
-      subject { Status.find_by_name(name) }
+      subject { Status.find_by(name: name) }
 
       it { is_expected.to be_nil }
     end

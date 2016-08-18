@@ -91,11 +91,21 @@ describe OpenProject::Configuration do
   describe '.load_overrides_from_environment_variables' do
     let(:config) {
       {
+        'someemptysetting' => nil,
+        'nil' => 'foobar',
+        'str_empty' => 'foobar',
         'somesetting' => 'foo',
+        'some_list_entry' => nil,
         'nested' => {
           'key' => 'value',
+          'hash' => 'somethingelse',
           'deeply_nested' => {
             'key' => nil
+          }
+        },
+        'foo' => {
+          'bar' => {
+            'hash_with_symbols': 1234
           }
         }
       }
@@ -103,9 +113,15 @@ describe OpenProject::Configuration do
 
     let(:env_vars) {
       {
+        'SOMEEMPTYSETTING' => '',
         'SOMESETTING' => 'bar',
+        'NIL' => '!!null',
+        'STR_EMPTY' => '!!str',
+        'OPTEST_SOME__LIST__ENTRY' => '[foo, bar , xyz, whut wat]',
         'OPTEST_NESTED_KEY' => 'baz',
-        'OPTEST_NESTED_DEEPLY__NESTED_KEY' => '42'
+        'OPTEST_NESTED_DEEPLY__NESTED_KEY' => '42',
+        'OPTEST_NESTED_HASH' => '{ foo: bar, xyz: bla }',
+        'OPTEST_FOO_BAR_HASH__WITH__SYMBOLS' => '{ foo: !ruby/symbol foobar }'
       }
     }
 
@@ -113,6 +129,18 @@ describe OpenProject::Configuration do
       stub_const('OpenProject::Configuration::ENV_PREFIX', 'OPTEST')
 
       OpenProject::Configuration.send :override_config!, config, env_vars
+    end
+
+    it 'should not parse the empty value' do
+      expect(config['someemptysetting']).to eq('')
+    end
+
+    it 'should parse the null identifier' do
+      expect(config['nil']).to be_nil
+    end
+
+    it 'should parse the empty string' do
+      expect(config['str_empty']).to eq('')
     end
 
     it 'should override the previous setting value' do
@@ -124,7 +152,20 @@ describe OpenProject::Configuration do
     end
 
     it 'should override values nested several levels deep' do
-      expect(config['nested']['deeply_nested']['key']).to eq('42')
+      expect(config['nested']['deeply_nested']['key']).to eq(42)
+    end
+
+    it 'should parse simple comma-separated lists' do
+      expect(config['some_list_entry']).to eq(['foo', 'bar', 'xyz', 'whut wat'])
+    end
+
+    it 'should parse simple hashes' do
+      expect(config['nested']['hash']).to eq('foo' => 'bar', 'xyz' => 'bla')
+    end
+
+    it 'should parse hashes with symbols and non-string values' do
+      expect(config['foo']['bar']['hash_with_symbols']).to eq('foo' => :foobar)
+      expect(config['foo']['bar']['hash_with_symbols'][:foo]).to eq(:foobar)
     end
   end
 
@@ -192,7 +233,92 @@ describe OpenProject::Configuration do
     end
   end
 
-  describe '.configure_action_mailer' do
+  describe '.migrate_mailer_configuration!' do
+    after do
+      # reset this setting value
+      Setting[:email_delivery_method] = nil
+      # reload configuration to isolate specs
+      OpenProject::Configuration.load
+    end
+
+    it 'does nothing if no legacy configuration given' do
+      OpenProject::Configuration['email_delivery_method'] = nil
+      expect(Setting).to_not receive(:email_delivery_method=)
+      expect(OpenProject::Configuration.migrate_mailer_configuration!).to eq(true)
+    end
+
+    it 'does nothing if email_delivery_configuration forced to legacy' do
+      OpenProject::Configuration['email_delivery_configuration'] = 'legacy'
+      expect(Setting).to_not receive(:email_delivery_method=)
+      expect(OpenProject::Configuration.migrate_mailer_configuration!).to eq(true)
+    end
+
+    it 'does nothing if setting already set' do
+      OpenProject::Configuration['email_delivery_method'] = :sendmail
+      Setting.email_delivery_method = :sendmail
+      expect(Setting).to_not receive(:email_delivery_method=)
+      expect(OpenProject::Configuration.migrate_mailer_configuration!).to eq(true)
+    end
+
+    it 'migrates the existing configuration to the settings table' do
+      OpenProject::Configuration['email_delivery_method'] = :smtp
+      OpenProject::Configuration['smtp_password'] = 'p4ssw0rd'
+      OpenProject::Configuration['smtp_address'] = 'smtp.example.com'
+      OpenProject::Configuration['smtp_port'] = 587
+      OpenProject::Configuration['smtp_user_name'] = 'username'
+      OpenProject::Configuration['smtp_enable_starttls_auto'] = true
+
+      expect(OpenProject::Configuration.migrate_mailer_configuration!).to eq(true)
+      expect(Setting.email_delivery_method).to eq(:smtp)
+      expect(Setting.smtp_password).to eq('p4ssw0rd')
+      expect(Setting.smtp_address).to eq('smtp.example.com')
+      expect(Setting.smtp_port).to eq(587)
+      expect(Setting.smtp_user_name).to eq('username')
+      expect(Setting.smtp_enable_starttls_auto?).to eq(true)
+    end
+  end
+
+  describe '.reload_mailer_configuration!' do
+    let(:action_mailer) { double('ActionMailer::Base', smtp_settings: {}) }
+
+    before do
+      stub_const('ActionMailer::Base', action_mailer)
+    end
+
+    after do
+      # reload configuration to isolate specs
+      OpenProject::Configuration.load
+    end
+
+    it 'uses the legacy method to configure email settings' do
+      OpenProject::Configuration['email_delivery_configuration'] = 'legacy'
+      expect(OpenProject::Configuration).to receive(:configure_legacy_action_mailer)
+      OpenProject::Configuration.reload_mailer_configuration!
+    end
+
+    it 'correctly sets the action mailer configuration based on the settings' do
+      Setting.email_delivery_method = :smtp
+      Setting.smtp_password = 'p4ssw0rd'
+      Setting.smtp_address = 'smtp.example.com'
+      Setting.smtp_domain = 'example.com'
+      Setting.smtp_port = 587
+      Setting.smtp_user_name = 'username'
+      Setting.smtp_enable_starttls_auto = 1
+
+      expect(action_mailer).to receive(:perform_deliveries=).with(true)
+      expect(action_mailer).to receive(:delivery_method=).with(:smtp)
+      OpenProject::Configuration.reload_mailer_configuration!
+      expect(action_mailer.smtp_settings).to eq(address: 'smtp.example.com',
+                                                port: 587,
+                                                domain: 'example.com',
+                                                authentication: 'plain',
+                                                user_name: 'username',
+                                                password: 'p4ssw0rd',
+                                                enable_starttls_auto: true)
+    end
+  end
+
+  describe '.configure_legacy_action_mailer' do
     let(:action_mailer) { double('ActionMailer::Base') }
     let(:config) {
       { 'email_delivery_method' => 'smtp',
@@ -209,8 +335,71 @@ describe OpenProject::Configuration do
       expect(action_mailer).to receive(:delivery_method=).with(:smtp)
       expect(action_mailer).to receive(:smtp_settings=).with(address: 'smtp.example.net',
                                                              port: '25')
-      OpenProject::Configuration.send(:configure_action_mailer, config)
+      OpenProject::Configuration.send(:configure_legacy_action_mailer, config)
     end
   end
 
+  describe '.configure_cache' do
+    let(:application_config) { Rails::Application::Configuration.new }
+
+    after do
+      # reload configuration to isolate specs
+      OpenProject::Configuration.load
+    end
+
+    context 'with cache store already set' do
+      before do
+        application_config.cache_store = 'foo'
+      end
+
+      context 'with additional cache store configuration' do
+        before do
+          OpenProject::Configuration['rails_cache_store'] = 'bar'
+        end
+
+        it 'changes the cache store' do
+          OpenProject::Configuration.send(:configure_cache, application_config)
+          expect(application_config.cache_store).to eq([:bar])
+        end
+      end
+
+      context 'without additional cache store configuration' do
+        before do
+          OpenProject::Configuration['rails_cache_store'] = nil
+        end
+
+        it 'does not change the cache store' do
+          OpenProject::Configuration.send(:configure_cache, application_config)
+          expect(application_config.cache_store).to eq('foo')
+        end
+      end
+    end
+
+    context 'without cache store already set' do
+      before do
+        application_config.cache_store = nil
+      end
+
+      context 'with additional cache store configuration' do
+        before do
+          OpenProject::Configuration['rails_cache_store'] = 'bar'
+        end
+
+        it 'changes the cache store' do
+          OpenProject::Configuration.send(:configure_cache, application_config)
+          expect(application_config.cache_store).to eq([:bar])
+        end
+      end
+
+      context 'without additional cache store configuration' do
+        before do
+          OpenProject::Configuration['rails_cache_store'] = nil
+        end
+        it 'defaults the cache store to :file_store' do
+          OpenProject::Configuration.send(:configure_cache, application_config)
+          expect(application_config.cache_store.first).to eq(:file_store)
+        end
+      end
+    end
+  end
 end

@@ -30,12 +30,11 @@ require 'spec_helper'
 require 'roar/decorator'
 
 describe OpenProject::Plugins::ActsAsOpEngine do
-
-  subject(:engine) do
-    Class.new(Rails::Engine) do
-      include OpenProject::Plugins::ActsAsOpEngine
-    end
+  class ActsAsOpEngineTestEngine < Rails::Engine
+    include OpenProject::Plugins::ActsAsOpEngine
   end
+
+  subject(:engine) { ActsAsOpEngineTestEngine }
 
   it { is_expected.to respond_to(:name) }
   it { is_expected.to respond_to(:patches) }
@@ -44,43 +43,7 @@ describe OpenProject::Plugins::ActsAsOpEngine do
   it { is_expected.to respond_to(:register) }
 
   describe '#name' do
-    before do
-      Object.const_set('SuperCaliFragilisticExpialidocious', engine)
-    end
-
-    describe '#name' do
-      subject { super().name }
-      it { is_expected.to eq 'SuperCaliFragilisticExpialidocious' }
-    end
-  end
-
-  describe '#extend_api_response' do
-    xit 'should lookup and extend an existing Decorator' do
-      # This test does not work as intended...
-      # The actual work done by :extend_api_response is not performed unless the engine is started
-      # However, it would be green because all attributes of the represented are magically added
-      # to the representer...
-      module API
-        module VTest
-          module WorkPackages
-            class WorkPackageRepresenter < ::Roar::Decorator
-              property :bar
-            end
-          end
-        end
-      end
-
-      represented_clazz = Struct.new(:foo, :bar)
-      representer = API::VTest::WorkPackages::WorkPackageRepresenter.new(represented_clazz.new)
-
-      engine.class_eval do
-        extend_api_response(:v_test, :work_packages, :work_package) do
-          property :foo
-        end
-      end
-
-      expect(representer.to_json).to have_json_path('represented/foo')
-      expect(representer.to_json).to have_json_path('represented/bar')
-    end
+    subject { engine.name }
+    it { is_expected.to eq 'ActsAsOpEngineTestEngine' }
   end
 end

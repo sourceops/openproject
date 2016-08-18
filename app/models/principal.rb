@@ -30,23 +30,52 @@
 class Principal < ActiveRecord::Base
   extend Pagination::Model
 
+  # Account statuses
+  # Code accessing the keys assumes they are ordered, which they are since Ruby 1.9
+  STATUSES = {
+    builtin: 0,
+    active: 1,
+    registered: 2,
+    locked: 3,
+    invited: 4
+  }
+
   self.table_name = "#{table_name_prefix}users#{table_name_suffix}"
 
+  has_one :preference,
+    dependent: :destroy,
+    class_name: 'UserPreference',
+    foreign_key: 'user_id'
   has_many :members, foreign_key: 'user_id', dependent: :destroy
-  has_many :memberships, class_name: 'Member', foreign_key: 'user_id', include: [:project, :roles], conditions: "#{Project.table_name}.status=#{Project::STATUS_ACTIVE}", order: "#{Project.table_name}.name"
+  has_many :memberships, -> {
+    includes(:project, :roles)
+      .where(projects: { status: Project::STATUS_ACTIVE })
+      .order('projects.name ASC')
+    # haven't been able to produce the order using hashes
+  },
+           class_name: 'Member',
+           foreign_key: 'user_id'
   has_many :projects, through: :memberships
   has_many :categories, foreign_key: 'assigned_to_id', dependent: :nullify
 
-  # TODO: The constants are misplaced in the subclass
-  scope :active, -> { where(status: User::STATUSES[:active]) }
+  scope :active, -> { where(status: STATUSES[:active]) }
 
-  scope :active_or_registered, -> { where(status: [User::STATUSES[:active], User::STATUSES[:registered]]) }
+  scope :active_or_registered, -> {
+    where(status: [STATUSES[:active], STATUSES[:registered], STATUSES[:invited]])
+  }
 
   scope :active_or_registered_like, ->(query) { active_or_registered.like(query) }
 
-  scope :not_in_project, lambda { |project| { conditions: "id NOT IN (select m.user_id FROM members as m where m.project_id = #{project.id})" } }
+  scope :not_in_project, ->(project) {
+    where("id NOT IN (select m.user_id FROM members as m where m.project_id = #{project.id})")
+  }
 
-  scope :like, lambda { |q|
+  # Active non-anonymous principals scope
+  scope :not_builtin, -> {
+    where("#{Principal.table_name}.status <> #{STATUSES[:builtin]}")
+  }
+
+  scope :like, -> (q) {
     firstnamelastname = "((firstname || ' ') || lastname)"
     lastnamefirstname = "((lastname || ' ') || firstname)"
 
@@ -58,17 +87,13 @@ class Principal < ActiveRecord::Base
 
     s = "%#{q.to_s.downcase.strip.tr(',', '')}%"
 
-    {
-      conditions: ['LOWER(login) LIKE :s OR ' +
-        "LOWER(#{firstnamelastname}) LIKE :s OR " +
-        "LOWER(#{lastnamefirstname}) LIKE :s OR " +
-        'LOWER(mail) LIKE :s',
-                   { s: s }],
-      order: 'type, login, lastname, firstname, mail'
-    }
+    where(['LOWER(login) LIKE :s OR ' +
+             "LOWER(#{firstnamelastname}) LIKE :s OR " +
+             "LOWER(#{lastnamefirstname}) LIKE :s OR " +
+             'LOWER(mail) LIKE :s',
+           { s: s }])
+      .order(:type, :login, :lastname, :firstname, :mail)
   }
-
-  scope :visible_by, lambda { |principal| Principal.visible_by_condition(principal) }
 
   before_create :set_default_empty_values
 
@@ -84,14 +109,8 @@ class Principal < ActiveRecord::Base
     active_or_registered_like(query).not_in_project(project)
   end
 
-  def self.visible_by_condition(principal)
-    if principal.respond_to?(:admin?) && principal.admin?
-      return where('true')
-    end
-
-    project_ids = principal.projects.pluck(:id)
-    where('id IN (select m.user_id FROM members AS m WHERE (m.project_id IN (?)))',
-          project_ids)
+  def self.order_by_name
+    order(User::USER_FORMATS_STRUCTURE[Setting.user_format].map(&:to_s))
   end
 
   def status_name
@@ -99,7 +118,7 @@ class Principal < ActiveRecord::Base
     # User defines the status values and other classes like Principal
     # shouldn't know anything about them. Nevertheless, some functions
     # want to know the status for other Principals than User.
-    raise 'Principal has status other than active' unless status == 1
+    raise 'Principal has status other than active' unless status == STATUSES[:active]
     'active'
   end
 

@@ -41,9 +41,20 @@ module API
                                                     WorkPackageRepresenter)
           end
 
-          def create(work_package, context = {})
-            create_class(work_package).new(work_package, context)
+          def create(work_package, current_user:, embed_links: false)
+            create_class(work_package).new(work_package,
+                                           current_user: current_user,
+                                           embed_links: embed_links)
           end
+        end
+
+        def initialize(model, current_user:, embed_links: false)
+          # Define all accessors on the customizable as they
+          # will be used afterwards anyway. Otherwise, we will have to
+          # go through method_missing which will take more time.
+          model.define_all_custom_field_accessors
+
+          super
         end
 
         self_link title_getter: -> (*) { represented.subject }
@@ -51,8 +62,7 @@ module API
         link :update do
           {
             href: api_v3_paths.work_package_form(represented.id),
-            method: :post,
-            title: "Update #{represented.subject}"
+            method: :post
           } if current_user_allowed_to(:edit_work_packages, context: represented.project)
         end
 
@@ -65,33 +75,23 @@ module API
         link :updateImmediately do
           {
             href: api_v3_paths.work_package(represented.id),
-            method: :patch,
-            title: "Update #{represented.subject}"
+            method: :patch
           } if current_user_allowed_to(:edit_work_packages, context: represented.project)
         end
 
         link :delete do
           {
-            href: work_packages_bulk_path(ids: represented),
-            method: :delete,
-            title: "Delete #{represented.subject}"
+            href: api_v3_paths.work_package(represented.id),
+            method: :delete
           } if current_user_allowed_to(:delete_work_packages, context: represented.project)
         end
 
-        link :log_time do
+        link :logTime do
           {
             href: new_work_package_time_entry_path(represented),
             type: 'text/html',
             title: "Log time on #{represented.subject}"
           } if current_user_allowed_to(:log_time, context: represented.project)
-        end
-
-        link :duplicate do
-          {
-            href: new_project_work_package_path(represented.project, copy_from: represented),
-            type: 'text/html',
-            title: "Duplicate #{represented.subject}"
-          } if current_user_allowed_to(:add_work_packages, context: represented.project)
         end
 
         link :move do
@@ -102,12 +102,42 @@ module API
           } if current_user_allowed_to(:move_work_packages, context: represented.project)
         end
 
+        link :copy do
+          {
+            href: new_work_package_move_path(represented, copy: true, ids: [represented.id]),
+            type: 'text/html',
+            title: "Copy #{represented.subject}"
+          } if current_user_allowed_to(:move_work_packages, context: represented.project)
+        end
+
+        link :pdf do
+          {
+            href: work_package_path(id: represented.id, format: :pdf),
+            type: 'application/pdf',
+            title: 'Export as PDF'
+          } if current_user_allowed_to(:export_work_packages, context: represented.project)
+        end
+
+        link :atom do
+          {
+            href: work_package_path(id: represented.id, format: :atom),
+            type: 'application/rss+xml',
+            title: 'Atom feed'
+          } if current_user_allowed_to(:export_work_packages, context: represented.project)
+        end
+
         linked_property :type, embed_as: ::API::V3::Types::TypeRepresenter
         linked_property :status, embed_as: ::API::V3::Statuses::StatusRepresenter
 
         linked_property :author, path: :user, embed_as: ::API::V3::Users::UserRepresenter
         linked_property :responsible, path: :user, embed_as: ::API::V3::Users::UserRepresenter
         linked_property :assigned_to, path: :user, embed_as: ::API::V3::Users::UserRepresenter
+
+        link :activities do
+          {
+            href: api_v3_paths.work_package_activities(represented.id)
+          }
+        end
 
         link :attachments do
           {
@@ -119,13 +149,26 @@ module API
           {
             href: api_v3_paths.attachments_by_work_package(represented.id),
             method: :post
-          }
+          } if current_user_allowed_to(:edit_work_packages, context: represented.project) ||
+               current_user_allowed_to(:add_work_packages, context: represented.project)
         end
 
         link :availableWatchers do
           {
             href: api_v3_paths.available_watchers(represented.id)
           } if current_user_allowed_to(:add_work_package_watchers, context: represented.project)
+        end
+
+        link :relations do
+          {
+            href: api_v3_paths.work_package_relations(represented.id)
+          }
+        end
+
+        link :revisions do
+          {
+            href: api_v3_paths.work_package_revisions(represented.id)
+          } if current_user_allowed_to(:view_changesets, context: represented.project)
         end
 
         link :watch do
@@ -177,9 +220,8 @@ module API
 
         link :addChild do
           {
-            href: new_project_work_package_path(represented.project,
-                                                work_package: { parent_id: represented }),
-            type: 'text/html',
+            href: api_v3_paths.work_packages_by_project(represented.project.identifier),
+            method: :post,
             title: "Add child of #{represented.subject}"
           } if current_user_allowed_to(:add_work_packages, context: represented.project)
         end
@@ -198,6 +240,13 @@ module API
             method: :post,
             title: 'Add comment'
           } if current_user_allowed_to(:add_work_package_notes, context: represented.project)
+        end
+
+        link :previewMarkup do
+          {
+            href: api_v3_paths.render_markup(link: api_v3_paths.work_package(represented.id)),
+            method: :post
+          }
         end
 
         linked_property :parent,
@@ -220,12 +269,16 @@ module API
         linked_property :version,
                         getter: :fixed_version,
                         title_getter: -> (*) {
-                          represented.fixed_version.to_s_for_project(represented.project)
-                        }
+                          represented.fixed_version.to_s
+                        },
+                        embed_as: ::API::V3::Versions::VersionRepresenter
 
         links :children do
           visible_children.map do |child|
-            { href: "#{root_path}api/v3/work_packages/#{child.id}", title: child.subject }
+            {
+              href: api_v3_paths.work_package(child.id),
+              title: child.subject
+            }
           end unless visible_children.empty?
         end
 
@@ -245,13 +298,28 @@ module API
                  getter: -> (*) do
                    datetime_formatter.format_date(represented.start_date, allow_nil: true)
                  end,
-                 render_nil: true
+                 render_nil: true,
+                 if: -> (_) {
+                   !represented.is_milestone?
+                 }
         property :due_date,
                  exec_context: :decorator,
                  getter: -> (*) do
                    datetime_formatter.format_date(represented.due_date, allow_nil: true)
                  end,
-                 render_nil: true
+                 render_nil: true,
+                 if: -> (_) {
+                   !represented.is_milestone?
+                 }
+        property :date,
+                 exec_context: :decorator,
+                 getter: -> (*) do
+                   datetime_formatter.format_date(represented.due_date, allow_nil: true)
+                 end,
+                 render_nil: true,
+                 if: -> (_) {
+                   represented.is_milestone?
+                 }
         property :estimated_time,
                  exec_context: :decorator,
                  getter: -> (*) do
@@ -282,87 +350,78 @@ module API
                  exec_context: :decorator,
                  getter: -> (*) { datetime_formatter.format_datetime(represented.updated_at) }
 
-        property :activities, embedded: true, exec_context: :decorator
-
-        property :version,
-                 embedded: true,
-                 exec_context: :decorator,
-                 if: ->(*) { represented.fixed_version.present? }
         property :watchers,
                  embedded: true,
                  exec_context: :decorator,
                  if: -> (*) {
                    current_user_allowed_to(:view_work_package_watchers,
-                                           context: represented.project)
+                                           context: represented.project) &&
+                     embed_links
                  }
 
         property :attachments,
                  embedded: true,
-                 exec_context: :decorator
+                 exec_context: :decorator,
+                 if: -> (*) { embed_links }
 
-        property :relations, embedded: true, exec_context: :decorator
+        property :relations,
+                 embedded: true,
+                 exec_context: :decorator,
+                 if: -> (*) { embed_links }
 
         def _type
           'WorkPackage'
         end
 
-        def activities
-          represented.journals.map do |activity|
-            ::API::V3::Activities::ActivityRepresenter.new(activity, current_user: current_user)
-          end
-        end
-
         def watchers
           # TODO/LEGACY: why do we need to ensure a specific order here?
           watchers = represented.watcher_users.order(User::USER_FORMATS_STRUCTURE[Setting.user_format])
-          total = watchers.count
           self_link = api_v3_paths.work_package_watchers(represented.id)
 
-          # FIXME/LEGACY: we pass the WP as context?!? that makes a difference!!!
-          # tl;dr: the embedded user representer must not be better than any other user representer
-          context = { current_user: current_user, work_package: represented }
           Users::UserCollectionRepresenter.new(watchers,
-                                               total,
                                                self_link,
-                                               context: context)
+                                               current_user: current_user)
         end
 
         def attachments
           self_path = api_v3_paths.attachments_by_work_package(represented.id)
           attachments = represented.attachments
           ::API::V3::Attachments::AttachmentCollectionRepresenter.new(attachments,
-                                                                      attachments.count,
-                                                                      self_path)
+                                                                      self_path,
+                                                                      current_user: current_user)
         end
 
         def relations
+          self_path = api_v3_paths.work_package_relations(represented.id)
           relations = represented.relations
-          visible_relations = relations.select do |relation|
+          visible_relations = relations.select { |relation|
             relation.other_work_package(represented).visible?
-          end
+          }
 
-          visible_relations.map do |relation|
-            Relations::RelationRepresenter.new(relation,
-                                               work_package: represented,
-                                               current_user: current_user)
-          end
-        end
-
-        def version
-          if represented.fixed_version.present?
-            Versions::VersionRepresenter.new(represented.fixed_version, current_user: current_user)
-          end
+          ::API::V3::Relations::RelationCollectionRepresenter.new(visible_relations,
+                                                                  self_path,
+                                                                  work_package: represented,
+                                                                  current_user: current_user)
         end
 
         def visible_children
           @visible_children ||= represented.children.select(&:visible?)
         end
 
-        private
-
-        def version_policy
-          @version_policy ||= ::VersionPolicy.new(current_user)
-        end
+        self.to_eager_load = [{ children: { project: :enabled_modules } },
+                              { parent: { project: :enabled_modules } },
+                              { project: [:enabled_modules, :work_package_custom_fields] },
+                              :status,
+                              :priority,
+                              { type: :custom_fields },
+                              :fixed_version,
+                              { custom_values: :custom_field },
+                              :author,
+                              :assigned_to,
+                              :responsible,
+                              :watcher_users,
+                              :category,
+                              :attachments]
       end
     end
   end

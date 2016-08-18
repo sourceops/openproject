@@ -31,6 +31,7 @@ See doc/COPYRIGHT.rdoc for more details.
   <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8" />
     <title><%= html_title %></title>
+    <meta name="viewport" content="width=device-width">
     <meta name="description" content="<%= OpenProject::Info.app_name %>" />
     <meta name="keywords" content="issue,bug,type" />
     <meta name="app_base_path" content="<%= OpenProject::Configuration['rails_relative_url_root'] || '' %>" />
@@ -38,12 +39,10 @@ See doc/COPYRIGHT.rdoc for more details.
     <meta name="current_menu_item" content="<%= current_menu_item %>" />
     <meta name="accessibility-mode" content="<%= current_user.impaired? %>" />
     <%= csrf_meta_tags %>
-    <%= favicon_link_tag 'favicon.ico' %>
-    <%= stylesheet_link_tag current_theme.stylesheet_manifest, :media => "all" %>
-    <% if User.current.impaired? && accessibility_css_enabled? %>
-      <%= stylesheet_link_tag 'accessibility' %>
-    <% end %>
+    <%= render 'common/favicons' %>
+    <%= stylesheet_link_tag current_theme.stylesheet_manifest, media: "all" %>
     <%= javascript_include_tag 'application' %>
+    <%= javascript_include_tag "locales/#{I18n.locale}" %>
     <!-- user specific tags -->
     <%= user_specific_javascript_includes %>
     <!-- project specific tags -->
@@ -65,28 +64,31 @@ See doc/COPYRIGHT.rdoc for more details.
     </noscript>
     <% main_menu = render_main_menu(@project) %>
     <% side_displayed = content_for?(:sidebar) || content_for?(:main_menu) || !main_menu.blank? %>
-    <div id="wrapper" class="<%= (side_displayed) ? '' : "nosidebar" %><%= (show_decoration) ? '' : 'nomenus' %>"
-  ng-class="{ 'hidden-navigation': !showNavigation }">
+    <% initial_classes = initial_menu_classes(side_displayed, show_decoration) %>
+    <div id="wrapper" style="<%= initial_menu_styles %>" class="<%= initial_classes %>"
+         ng-class="{ 'hidden-navigation': !showNavigation }">
       <% if show_decoration %>
         <div id="top-menu">
           <div id="header">
             <div id="logo">
-              <%= link_to(I18n.t('label_home'), home_url, :class => 'home-link') %>
+              <%= link_to(I18n.t('label_home'), home_url, class: 'home-link') %>
             </div>
             <div id="top-menu-items">
-              <%= render_top_menu_left %>
+              <h1 class="hidden-for-sighted">
+                <%= l(:label_top_menu) %>
+              </h1>
+              <%= render_top_menu_left(@project)%>
               <div class="top-menu-items-right">
-                <%= render :partial => 'search/mini_form' %>
-                <h1 class="hidden-for-sighted">
-                  <%= l(:label_top_menu) %>
-                </h1>
+                <%= render partial: 'search/mini_form' %>
                 <%= render_top_menu_right %>
               </div>
             </div>
           </div>
         </div>
       <% end %>
-      <div id="main" class="<%= side_displayed ? '' : "nosidebar" %><%= (show_decoration) ? '' : 'nomenus' %>">
+      <div id="main"
+           class="<%= initial_classes %>"
+           ng-class="{ 'hidden-navigation': !showNavigation }">
         <% if (side_displayed && show_decoration) %>
           <div id="main-menu" ng-controller="MainMenuController as mainMenu">
             <h1 class="hidden-for-sighted"><%= l(:label_main_menu) %></h1>
@@ -108,27 +110,46 @@ See doc/COPYRIGHT.rdoc for more details.
           </div>
         <% end %>
         <% if show_decoration %>
-          <div id="breadcrumb" class="<%= (side_displayed) ? '' : "nosidebar" %><%= (show_decoration) ? '' : 'nomenus' %>"
-        ng-class="{ 'hidden-navigation': !showNavigation }">
+          <div id="breadcrumb" class="<%= initial_classes %>"
+               ng-class="{ 'hidden-navigation': !showNavigation }">
             <%= you_are_here_info %>
             <%= full_breadcrumb %>
+            <%= call_hook :view_layouts_base_breadcrumb %>
           </div>
         <% end %>
-        <div class="<%= (side_displayed) ? '' : "nosidebar" %><%= (show_decoration) ? '' : 'nomenus' %>" id="content"
-      ng-class="{ 'hidden-navigation': !showNavigation }">
+        <%= render_flash_messages %>
+        <notifications></notifications>
+        <div id="content" class="<%= initial_classes %>"
+             ng-class="{ 'hidden-navigation': !showNavigation }">
           <h1 class="hidden-for-sighted"><%= l(:label_content) %></h1>
-          <%= render_flash_messages %>
-          <flash-message></flash-message>
-          <!-- Action menu -->
-          <%= render :partial => 'layouts/action_menu' %>
-          <%= yield %>
+          <%= content_for :content_body %>
+          <% unless local_assigns[:no_action_menu] %>
+            <!-- Action menu -->
+            <%= render partial: 'layouts/action_menu' %>
+            <%= yield %>
+          <% end %>
           <%= call_hook :view_layouts_base_content %>
-          <div style="clear:both;">&nbsp;</div>
+          <% unless local_assigns[:no_action_menu] %>
+            <div style="clear:both;">&nbsp;</div>
+          <% end %>
         </div>
-        <div style="clear:both;">&nbsp;</div>
+        <% unless local_assigns[:no_action_menu] %>
+          <div style="clear:both;">&nbsp;</div>
+        <% end %>
       </div>
       <div id="ajax-indicator" style="display:none;"><span><%= l(:label_loading) %></span></div>
     </div>
+    <%# Properly decides main menu expanded state before its drawn. Fixes flickering side menu
+        where menu is first expanded, then being collapsed in angular. %>
+    <%= javascript_tag do %>
+    (function($) {
+      var wrapper = $('#wrapper');
+      if (window.sessionStorage.getItem('openproject:navigation-toggle') === 'collapsed') {
+        $('.can-hide-navigation').addClass('hidden-navigation');
+      }
+      wrapper.show();
+    }(jQuery));
+    <% end %>
     <% if (show_decoration) %>
       <div id="footer">
         <div class="footer-content">

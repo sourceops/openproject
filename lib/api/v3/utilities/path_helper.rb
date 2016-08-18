@@ -34,6 +34,15 @@ module API
         include API::Utilities::UrlHelper
 
         class ApiV3Path
+          extend API::Utilities::UrlHelper
+
+          # Determining the root_path on every url we want to render is
+          # expensive. As the root_path will not change within a
+          # request, we can cache the first response on each request.
+          def self.root_path
+            RequestStore.store[:cached_root_path] ||= super
+          end
+
           def self.root
             "#{root_path}api/v3"
           end
@@ -46,8 +55,8 @@ module API
             "#{root}/attachments/#{id}"
           end
 
-          def self.attachment_download(id)
-            Rails.application.routes.url_helpers.attachment_path(id)
+          def self.attachment_download(id, filename = nil)
+            download_attachment_path(id, filename)
           end
 
           def self.attachments_by_work_package(id)
@@ -66,6 +75,14 @@ module API
             "#{work_package(work_package_id)}/available_watchers"
           end
 
+          def self.available_projects_on_edit(work_package_id)
+            "#{work_package(work_package_id)}/available_projects"
+          end
+
+          def self.available_projects_on_create
+            "#{work_packages}/available_projects"
+          end
+
           def self.categories(project_id)
             "#{project(project_id)}/categories"
           end
@@ -78,8 +95,16 @@ module API
             "#{root}/configuration"
           end
 
-          def self.create_work_package_form(project_id)
+          def self.create_work_package_form
+            "#{work_packages}/form"
+          end
+
+          def self.create_project_work_package_form(project_id)
             "#{work_packages_by_project(project_id)}/form"
+          end
+
+          def self.my_preferences
+            "#{root}/my_preferences"
           end
 
           def self.priorities
@@ -114,6 +139,10 @@ module API
             "#{root}/relations/#{id}"
           end
 
+          def self.revision(id)
+            "#{root}/revisions/#{id}"
+          end
+
           def self.render_markup(format: nil, link: nil)
             format = format || Setting.text_formatting
             format = 'plain' if format == '' # Setting will return '' for plain
@@ -122,6 +151,14 @@ module API
             path += "?context=#{link}" if link
 
             path
+          end
+
+          def self.show_revision(project_id, identifier)
+            show_revision_project_repository_path(project_id, identifier)
+          end
+
+          def self.show_user(user_id)
+            user_path(user_id)
           end
 
           def self.statuses
@@ -188,6 +225,10 @@ module API
             "#{work_package(id)}/activities"
           end
 
+          def self.work_package_columns(project_id)
+            "#{work_packages_by_project(project_id)}/columns"
+          end
+
           def self.work_package_form(id)
             "#{work_package(id)}/form"
           end
@@ -200,8 +241,16 @@ module API
             "#{work_package_relations(work_package_id)}/#{id}"
           end
 
+          def self.work_package_revisions(id)
+            "#{work_package(id)}/revisions"
+          end
+
           def self.work_package_schema(project_id, type_id)
             "#{root}/work_packages/schemas/#{project_id}-#{type_id}"
+          end
+
+          def self.work_package_sums_schema
+            "#{root}/work_packages/schemas/sums"
           end
 
           def self.work_package_watchers(id)
@@ -210,12 +259,6 @@ module API
 
           def self.work_packages_by_project(project_id)
             "#{project(project_id)}/work_packages"
-          end
-
-          def self.root_path
-            @@root_path ||= Class.new.tap do |c|
-              c.extend(::API::V3::Utilities::PathHelper)
-            end.root_path
           end
         end
 

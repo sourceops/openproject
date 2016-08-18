@@ -27,7 +27,8 @@
 #++
 
 require 'api/v3/work_packages/work_packages_shared_helpers'
-require 'api/v3/work_packages/create_contract'
+require 'create_work_package_service'
+require 'work_packages/create_contract'
 
 module API
   module V3
@@ -37,10 +38,14 @@ module API
           helpers ::API::V3::WorkPackages::WorkPackagesSharedHelpers
 
           post do
-            create_contract = ::API::V3::WorkPackages::CreateContract
-            create_work_package_form(create_service.create,
-                                     contract_class: create_contract,
-                                     form_class: CreateFormRepresenter)
+            work_package = merge_hash_into_work_package!(request_body, WorkPackage.new)
+            work_package = WorkPackage.new(author: current_user,
+                                           project: work_package.project)
+
+            create_work_package_form(work_package,
+                                     contract_class: ::WorkPackages::CreateContract,
+                                     form_class: CreateFormRepresenter,
+                                     action: :create)
           end
         end
       end

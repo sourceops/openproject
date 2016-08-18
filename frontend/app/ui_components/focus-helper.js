@@ -27,9 +27,40 @@
 //++
 
 // TODO move to UI components
-module.exports = function($timeout, FOCUSABLE_SELECTOR) {
+module.exports = function ($timeout, FOCUSABLE_SELECTOR) {
+
+  var minimumOffsetForNewSwitchInMs = 100;
+  var lastFocusSwitch = -minimumOffsetForNewSwitchInMs;
+  var lastPriority = -1;
+
+  function throttleAndCheckIfAllowedFocusChangeBasedOnTimeout() {
+    var allowFocusSwitch = (Date.now() - lastFocusSwitch) >= minimumOffsetForNewSwitchInMs;
+
+    // Always update so that a chain of focus-change-requests gets considered as one
+    lastFocusSwitch = Date.now();
+
+    return allowFocusSwitch;
+  }
+
+  function checkIfAllowedFocusChange(priority) {
+    var checkTimeout = throttleAndCheckIfAllowedFocusChangeBasedOnTimeout();
+
+    if (checkTimeout) {
+      // new timeout window -> reset priority
+      lastPriority = -1;
+    } else {
+      // within timeout window
+      if (priority > lastPriority) {
+        lastPriority = priority;
+        return true;
+      }
+    }
+
+    return checkTimeout;
+  }
+
   var FocusHelper = {
-    getFocusableElement: function(element) {
+    getFocusableElement: function (element) {
       var focusser = element.find('input.ui-select-focusser');
 
       if (focusser.length > 0) {
@@ -45,32 +76,42 @@ module.exports = function($timeout, FOCUSABLE_SELECTOR) {
       return focusable[0];
     },
 
-    focus: function(element) {
+    focus: function (element) {
       var focusable = angular.element(FocusHelper.getFocusableElement(element)),
-          $focusable = angular.element(focusable),
-          isDisabled = $focusable.is('[disabled]');
+        $focusable = angular.element(focusable),
+        isDisabled = $focusable.is('[disabled]');
 
-      if(isDisabled) {
+      if (isDisabled && !$focusable.attr('ng-disabled')) {
         $focusable.removeProp('disabled');
       }
 
       focusable.focus();
 
-      if(isDisabled) {
+      if (isDisabled && !$focusable.attr('ng-disabled')) {
         $focusable.prop('disabled');
       }
     },
 
-    focusElement: function(element) {
-      $timeout(function() {
+    focusElement: function (element, priority) {
+      if (!checkIfAllowedFocusChange(priority)) {
+        return;
+      }
+
+      $timeout(function () {
         FocusHelper.focus(element);
       });
     },
 
+    focusUiSelect: function (element) {
+      $timeout(function () {
+        element.find('.ui-select-match').trigger('click');
+      });
+    },
+
     // TODO: remove when select2 is not used
-    focusSelect2Element: function(element) {
-      var focusSelect2ElementRecursiv = function(retries) {
-        $timeout(function() {
+    focusSelect2Element: function (element) {
+      var focusSelect2ElementRecursiv = function (retries) {
+        $timeout(function () {
           element.select2('focus');
 
           var isSelect2Focused = angular.element(document.activeElement).hasClass('select2-input');
@@ -82,7 +123,8 @@ module.exports = function($timeout, FOCUSABLE_SELECTOR) {
       };
 
       focusSelect2ElementRecursiv(3);
-    }
+    },
+
   };
 
   return FocusHelper;

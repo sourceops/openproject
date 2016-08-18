@@ -31,28 +31,30 @@
 describe('optionsDropdown Directive', function() {
     var compile, element, rootScope, scope, Query, I18n, AuthorisationService, stateParams = {};
 
-    beforeEach(module('openproject.models',
+    beforeEach(angular.mock.module('openproject.models',
                       'openproject.workPackages',
                       'openproject.api',
                       'openproject.layout',
                       'openproject.services'));
-    beforeEach(module('openproject.templates', function($provide) {
+    
+    beforeEach(angular.mock.module('openproject.templates', function($provide) {
       var configurationService = {};
 
       configurationService.isTimezoneSet = sinon.stub().returns(false);
+      configurationService.accessibilityModeEnabled = sinon.stub().returns(false);
 
       $provide.constant('$stateParams', stateParams);
       $provide.constant('ConfigurationService', configurationService);
     }));
 
-    beforeEach(module('openproject.templates', function($provide) {
+    beforeEach(angular.mock.module('openproject.templates', function($provide) {
       var state = { go: function() { return false; } };
       $provide.value('$state', state);
     }));
 
     beforeEach(inject(function($rootScope, $compile) {
       var optionsDropdownHtml;
-      optionsDropdownHtml = '<div id="toolbar"><button has-dropdown-menu="" target="SettingsDropdownMenu" locals="query"></button></div>';
+      optionsDropdownHtml = '<div class="toolbar"><button has-dropdown-menu="" target="SettingsDropdownMenu" locals="query"></button></div>';
 
       element = angular.element(optionsDropdownHtml);
       rootScope = $rootScope;

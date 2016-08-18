@@ -54,19 +54,19 @@ module API
             self_path = api_v3_paths.attachments_by_work_package(@work_package.id)
             attachments = @work_package.attachments
             AttachmentCollectionRepresenter.new(attachments,
-                                                attachments.count,
-                                                self_path)
+                                                self_path,
+                                                current_user: current_user)
           end
 
           post do
-            authorize(:edit_work_packages, context: @work_package.project)
+            authorize_any [:edit_work_packages, :add_work_packages], projects: @work_package.project
 
             metadata = parse_metadata params[:metadata]
             file = params[:file]
 
             unless metadata && file
               raise ::API::Errors::InvalidRequestBody.new(
-                      I18n.t('api_v3.errors.multipart_body_error'))
+                I18n.t('api_v3.errors.multipart_body_error'))
             end
 
             uploaded_file = OpenProject::Files.build_uploaded_file file[:tempfile],
@@ -81,7 +81,8 @@ module API
               raise ::API::Errors::ErrorBase.create_and_merge_errors(error.record.errors)
             end
 
-            ::API::V3::Attachments::AttachmentRepresenter.new(attachment)
+            ::API::V3::Attachments::AttachmentRepresenter.new(attachment,
+                                                              current_user: current_user)
           end
         end
       end

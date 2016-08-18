@@ -44,18 +44,6 @@ describe ProjectsController, type: :controller do
     @params = {}
   end
 
-  def clear_settings_cache
-    Rails.cache.clear
-  end
-
-  # this is the base method for get, post, etc.
-  def process(*args)
-    clear_settings_cache
-    result = super
-    clear_settings_cache
-    result
-  end
-
   describe 'show' do
     render_views
 
@@ -98,14 +86,14 @@ describe ProjectsController, type: :controller do
         it 'renders main menu with wiki menu item' do
           get 'show', @params
 
-          assert_select '#main-menu a.Wiki-menu-item', 'Wiki'
+          assert_select '#main-menu a.wiki-menu-item', 'wiki'
         end
       end
 
       describe 'with custom wiki menu item' do
         before do
-          main_item = FactoryGirl.create(:wiki_menu_item, navigatable_id: @project.wiki.id, name: 'Example', title: 'Example')
-          sub_item = FactoryGirl.create(:wiki_menu_item, navigatable_id: @project.wiki.id, name: 'Sub', title: 'Sub', parent_id: main_item.id)
+          main_item = FactoryGirl.create(:wiki_menu_item, navigatable_id: @project.wiki.id, name: 'example', title: 'Example')
+          sub_item = FactoryGirl.create(:wiki_menu_item, navigatable_id: @project.wiki.id, name: 'sub', title: 'Sub', parent_id: main_item.id)
         end
 
         it 'renders show' do
@@ -117,13 +105,13 @@ describe ProjectsController, type: :controller do
         it 'renders main menu with wiki menu item' do
           get 'show', @params
 
-          assert_select '#main-menu a.Example-menu-item', 'Example'
+          assert_select '#main-menu a.example-menu-item', 'example'
         end
 
         it 'renders main menu with sub wiki menu item' do
           get 'show', @params
 
-          assert_select '#main-menu a.Sub-menu-item', 'Sub'
+          assert_select '#main-menu a.sub-menu-item', 'sub'
         end
       end
     end
@@ -166,123 +154,110 @@ describe ProjectsController, type: :controller do
   end
 
   describe 'new' do
-
     it "renders 'new'" do
       get 'new', @params
       expect(response).to be_success
       expect(response).to render_template 'new'
     end
-
   end
 
   describe 'settings' do
     render_views
 
     describe '#type' do
+      let(:update_service) do
+        service = double('update service')
+
+        allow(UpdateProjectsTypesService).to receive(:new).with(project).and_return(service)
+
+        service
+      end
       let(:user) { FactoryGirl.create(:admin) }
-      let(:type_standard) { FactoryGirl.create(:type_standard) }
-      let(:type_bug) { FactoryGirl.create(:type_bug) }
-      let(:type_feature) { FactoryGirl.create(:type_feature) }
-      let(:types) { [type_standard, type_bug, type_feature] }
-      let(:project) {
-        FactoryGirl.create(:project,
-                           types: types)
-      }
-      let(:work_package_standard) {
-        FactoryGirl.create(:work_package,
-                           project: project,
-                           type: type_standard)
-      }
-      let(:work_package_bug) {
-        FactoryGirl.create(:work_package,
-                           project: project,
-                           type: type_bug)
-      }
-      let(:work_package_feature) {
-        FactoryGirl.create(:work_package,
-                           project: project,
-                           type: type_feature)
-      }
+      let(:project) do
+        project = FactoryGirl.build_stubbed(:project)
 
-      shared_examples_for :redirect do
-        subject { response }
+        allow(Project).to receive(:find).and_return(project)
 
-        it { is_expected.to be_redirect }
+        project
       end
 
-      before { allow(User).to receive(:current).and_return user }
+      before do
+        allow(User).to receive(:current).and_return user
+      end
 
-      shared_context 'work_packages' do
+      context 'on success' do
         before do
-          work_package_standard
-          work_package_bug
-          work_package_feature
+          expect(update_service).to receive(:call).with([1, 2, 3]).and_return true
+
+          patch :types, id: project.id, project: { 'type_ids' => ['1', '2', '3'] }
+        end
+
+        it 'sets a flash message' do
+          expect(flash[:notice]).to eql(I18n.t('notice_successful_update'))
+        end
+
+        it 'redirects to settings#types' do
+          expect(response).to redirect_to(settings_project_path(project.identifier, tab: 'types'))
         end
       end
 
-      shared_examples_for :success do
-        let(:regex) { Regexp.new(I18n.t(:notice_successful_update)) }
+      context 'on failure' do
+        let(:error_message) { 'error message' }
 
-        subject { flash[:notice].last }
+        before do
+          expect(update_service).to receive(:call).with([1, 2, 3]).and_return false
 
-        it { is_expected.to match(regex) }
+          allow(project).to receive_message_chain(:errors, :full_messages).and_return(error_message)
+
+          patch :types, id: project.id, project: { 'type_ids' => ['1', '2', '3'] }
+        end
+
+        it 'sets a flash message' do
+          expect(flash[:error]).to eql(error_message)
+        end
+
+        it 'redirects to settings#types' do
+          expect(response).to redirect_to(settings_project_path(project.identifier, tab: 'types'))
+        end
+      end
+    end
+
+    describe '#custom_fields' do
+      let(:project) { FactoryGirl.create(:project) }
+      let(:custom_field_1) { FactoryGirl.create(:work_package_custom_field) }
+      let(:custom_field_2) { FactoryGirl.create(:work_package_custom_field) }
+      let(:request) do
+        put :custom_fields,
+            id: project.id,
+            project: {
+              work_package_custom_field_ids: [custom_field_1.id, custom_field_2.id]
+            }
       end
 
-      context 'no type missing' do
-        include_context 'work_packages'
+      context 'with valid project' do
+        before do
+          request
+        end
 
-        let(:type_ids) { types.map(&:id) }
+        it { expect(response).to redirect_to(settings_project_path(project, 'custom_fields')) }
 
-        before {
-          put :types,
-              id: project.id,
-              project: { 'type_ids' => type_ids }
-        }
-
-        it_behaves_like :redirect
-
-        it_behaves_like :success
-      end
-
-      context 'all types missing' do
-        include_context 'work_packages'
-
-        let(:missing_types) { types }
-
-        before {
-          put :types,
-              id: project.id,
-              project: { 'type_ids' => [] }
-        }
-
-        it_behaves_like :redirect
-
-        describe 'shows missing types' do
-          let(:regex) { Regexp.new(I18n.t(:error_types_in_use_by_work_packages).sub('%{types}', '')) }
-
-          subject { flash[:error] }
-
-          it { is_expected.to match(regex) }
-
-          it { is_expected.to match(Regexp.new(type_standard.name)) }
-
-          it { is_expected.to match(Regexp.new(type_bug.name)) }
-
-          it { is_expected.to match(Regexp.new(type_feature.name)) }
+        it 'sets flash[:notice]' do
+          expect(flash[:notice]).to eql(I18n.t(:notice_successful_update))
         end
       end
 
-      context 'no type selected' do
-        before { put :types, id: project.id }
+      context 'with invalid project' do
+        before do
+          allow_any_instance_of(Project).to receive(:save).and_return(false)
+          request
+        end
 
-        it_behaves_like :success
+        it { expect(response).to redirect_to(settings_project_path(project, 'custom_fields')) }
 
-        describe 'automatic selection of standard type' do
-          let(:regex) { Regexp.new(I18n.t(:notice_automatic_set_of_standard_type)) }
-
-          subject { flash[:notice].all? { |n| regex.match(n).nil? } }
-
-          it { is_expected.to be_falsey }
+        it 'sets flash[:error]' do
+          expect(flash[:error]).to include(
+            "You cannot update the project's available custom fields. The project is invalid:"
+          )
         end
       end
     end

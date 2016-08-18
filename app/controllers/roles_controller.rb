@@ -47,21 +47,22 @@ class RolesController < ApplicationController
     @role = Role.new(permitted_params.role? || { permissions: Role.non_member.permissions })
 
     @permissions = @role.setable_permissions
-    @roles = Role.find :all, order: 'builtin, position'
+    @roles = Role.order('builtin, position')
   end
 
   def create
     @role = Role.new(permitted_params.role? || { permissions: Role.non_member.permissions })
     if @role.save
       # workflow copy
-      if !params[:copy_workflow_from].blank? && (copy_from = Role.find_by_id(params[:copy_workflow_from]))
+      if !params[:copy_workflow_from].blank? && (copy_from = Role.find_by(id: params[:copy_workflow_from]))
         @role.workflows.copy(copy_from)
       end
       flash[:notice] = l(:notice_successful_create)
       redirect_to action: 'index'
+      notify_changed_roles(:added, @role)
     else
       @permissions = @role.setable_permissions
-      @roles = Role.find :all, order: 'builtin, position'
+      @roles = Role.order('builtin, position')
 
       render action: 'new'
     end
@@ -78,6 +79,7 @@ class RolesController < ApplicationController
     if @role.update_attributes(permitted_params.role)
       flash[:notice] = l(:notice_successful_update)
       redirect_to action: 'index'
+      notify_changed_roles(:updated, @role)
     else
       @permissions = @role.setable_permissions
       render action: 'edit'
@@ -87,19 +89,21 @@ class RolesController < ApplicationController
   def destroy
     @role = Role.find(params[:id])
     @role.destroy
+    flash[:notice] = l(:notice_successful_delete)
     redirect_to action: 'index'
+    notify_changed_roles(:removed, @role)
   rescue
     flash[:error] =  l(:error_can_not_remove_role)
     redirect_to action: 'index'
   end
 
   def report
-    @roles = Role.order('builtin, position').all
+    @roles = Role.order('builtin, position')
     @permissions = Redmine::AccessControl.permissions.select { |p| !p.public? }
   end
 
   def bulk_update
-    @roles = Role.order('builtin, position').all
+    @roles = Role.order('builtin, position')
 
     @roles.each do |role|
       role.permissions = params[:permissions][role.id.to_s]
@@ -108,6 +112,7 @@ class RolesController < ApplicationController
 
     flash[:notice] = l(:notice_successful_update)
     redirect_to action: 'index'
+    notify_changed_roles(:bulk_update, @roles)
   end
 
   def autocomplete_for_role
@@ -122,5 +127,11 @@ class RolesController < ApplicationController
     respond_to do |format|
       format.json
     end
+  end
+
+  private
+
+  def notify_changed_roles(action, changed_role)
+    OpenProject::Notifications.send(:roles_changed, action: action, role: changed_role)
   end
 end

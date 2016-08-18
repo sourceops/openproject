@@ -28,8 +28,6 @@
 #++
 
 class Member < ActiveRecord::Base
-  include ActiveModel::ForbiddenAttributesProtection
-
   belongs_to :user
   belongs_to :principal, foreign_key: 'user_id'
   has_many :member_roles, dependent: :destroy, autosave: true
@@ -45,8 +43,11 @@ class Member < ActiveRecord::Base
   before_destroy :remove_from_category_assignments
   after_destroy :unwatch_from_permission_change
 
+  after_save :save_notification
+  after_destroy :destroy_notification
+
   def name
-    user.name
+    principal.name
   end
 
   def to_s
@@ -98,7 +99,8 @@ class Member < ActiveRecord::Base
   end
 
   def <=>(member)
-    a, b = roles.sort.first, member.roles.sort.first
+    a = roles.sort.first
+    b = member.roles.sort.first
     a == b ? (principal <=> member.principal) : (a <=> b)
   end
 
@@ -115,17 +117,27 @@ class Member < ActiveRecord::Base
   end
 
   # remove category based auto assignments for this member
+  #
+  # Note: This logic is duplicated for mass deletion in `app/models/group/destroy.rb`.
+  #       Accordingly it has to be changed there too should this bit change at all.
   def remove_from_category_assignments
-    Category.update_all 'assigned_to_id = NULL', ['project_id = ? AND assigned_to_id = ?', project.id, user.id] if user
+    Category.where(['project_id = ? AND assigned_to_id = ?', project_id, user_id])
+      .update_all 'assigned_to_id = NULL' if user
   end
 
   # Find or initialize a Member with an id, attributes, and for a Principal
   def self.edit_membership(id, new_attributes, principal = nil)
     @membership = id.present? ? Member.find(id) : Member.new(principal: principal)
-    # interface refactoring needed
-    # not critical atm because only admins can invoke it (see users and groups controllers)
-    @membership.force_attributes = new_attributes
+    @membership.attributes = new_attributes
     @membership
+  end
+
+  ##
+  # Returns true if this user can be deleted as they have no other memberships
+  # and haven't been activated yet. Only applies if the member is actually a user
+  # as opposed to a group.
+  def disposable?
+    user && user.invited? && user.memberships.none? { |m| m.project_id != project_id }
   end
 
   protected
@@ -179,7 +191,7 @@ class Member < ActiveRecord::Base
     # Add new roles
     # Do this before destroying them, otherwise the Member is destroyed due to not having any
     # Roles assigned via MemberRoles.
-    new_role_ids.each { |id| do_add_role(id, nil, save_and_possibly_destroy) }
+    new_role_ids.each do |id| do_add_role(id, nil, save_and_possibly_destroy) end
 
     # Remove roles (Rails' #role_ids= will not trigger MemberRole#on_destroy)
     member_roles_to_destroy = member_roles.select { |mr| !ids.include?(mr.role_id) }
@@ -199,9 +211,20 @@ class Member < ActiveRecord::Base
   private
 
   # Unwatch things that the user is no longer allowed to view inside project
+  #
+  # Note: This logic is duplicated for mass deletion in `app/models/group/destroy.rb`.
+  #       Accordingly it has to be changed there too should this bit change at all.
   def unwatch_from_permission_change
     if user
       Watcher.prune(user: user, project: project)
     end
+  end
+
+  def save_notification
+    ::OpenProject::Notifications.send(:member_updated, member: self)
+  end
+
+  def destroy_notification
+    ::OpenProject::Notifications.send(:member_removed, member: self)
   end
 end

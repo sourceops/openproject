@@ -28,37 +28,102 @@
 #++
 
 class UpdateWorkPackageService
-  attr_accessor :user, :work_package, :permitted_params
+  include Concerns::Contracted
 
-  def initialize(user:, work_package:, permitted_params: nil, send_notifications: true)
+  attr_accessor :user, :work_package
+
+  self.contract = WorkPackages::UpdateContract
+
+  def initialize(user:, work_package:)
     self.user = user
     self.work_package = work_package
-    self.permitted_params = permitted_params
 
-    JournalObserver.instance.send_notification = send_notifications
+    self.contract = self.class.contract.new(work_package, user)
   end
 
-  def update
-    work_package.update_by!(user, effective_params)
-  end
-
-  def save
-    work_package.save
+  def call(attributes: {}, send_notifications: true)
+    User.execute_as user do
+      JournalManager.with_send_notifications send_notifications do
+        update(attributes)
+      end
+    end
   end
 
   private
 
-  def effective_params
-    effective_params = HashWithIndifferentAccess.new
+  def update(attributes)
+    set_attributes(attributes)
 
-    if permitted_params[:journal_notes]
-      notes = { notes: permitted_params.delete(:journal_notes) }
+    changed_attributes = work_package.changes.dup
+    save_result, save_errors = validate_and_save(work_package)
 
-      effective_params.merge!(notes) if user.allowed_to?(:add_work_package_notes, work_package.project)
+    if save_result
+      cleanup_result, cleanup_errors = cleanup(changed_attributes)
+
+      ServiceResult.new(success: cleanup_result,
+                        errors: cleanup_errors)
+    else
+      ServiceResult.new(success: save_result,
+                        errors: save_errors)
+    end
+  end
+
+  def set_attributes(attributes)
+    work_package.attributes = attributes
+
+    unify_dates if work_package_now_milestone?
+  end
+
+  def cleanup(attributes)
+    result = true
+    errors = work_package.errors
+
+    if attributes.include?(:project_id)
+      delete_relations
+      move_time_entries
+      result, errors = move_children
+    end
+    if attributes.include?(:type_id)
+      reset_custom_values
     end
 
-    effective_params.merge!(permitted_params) if user.allowed_to?(:edit_work_packages, work_package.project)
+    [result, errors]
+  end
 
-    effective_params
+  def delete_relations
+    unless Setting.cross_project_work_package_relations?
+      work_package.relations_from.clear
+      work_package.relations_to.clear
+    end
+  end
+
+  def move_time_entries
+    work_package.move_time_entries(work_package.project)
+  end
+
+  def reset_custom_values
+    work_package.reset_custom_values!
+  end
+
+  def move_children
+    work_package.children.each do |child|
+      result, errors = UpdateChildWorkPackageService
+                       .new(user: user,
+                            work_package: child)
+                       .call(attributes: { project: work_package.project })
+
+      return result, errors unless result
+    end
+
+    [true, work_package.errors]
+  end
+
+  def unify_dates
+    unified_date = work_package.due_date || work_package.start_date
+    work_package.start_date = work_package.due_date = unified_date
+  end
+
+  def work_package_now_milestone?
+    work_package.type_id_changed? && work_package.milestone?
   end
 end

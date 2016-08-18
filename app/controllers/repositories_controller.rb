@@ -32,21 +32,22 @@ require 'SVG/Graph/BarHorizontal'
 require 'digest/sha1'
 require_dependency 'open_project/scm/adapters'
 
-class ChangesetNotFound < Exception
+class ChangesetNotFound < StandardError
 end
-class InvalidRevisionParam < Exception
+class InvalidRevisionParam < StandardError
 end
 
 class RepositoriesController < ApplicationController
   include PaginationHelper
+  include RepositoriesHelper
 
   menu_item :repository
   menu_item :settings, only: [:edit, :destroy_info]
   default_search_scope :changesets
 
   before_filter :find_project_by_project_id
-  before_filter :find_repository, except: [:edit, :update, :create, :destroy, :destroy_info]
   before_filter :authorize
+  before_filter :find_repository, except: [:edit, :update, :create, :destroy, :destroy_info]
   accept_key_auth :revisions
 
   rescue_from OpenProject::Scm::Exceptions::ScmError, with: :show_error_command_failed
@@ -90,14 +91,18 @@ class RepositoriesController < ApplicationController
 
   def committers
     @committers = @repository.committers
-    @users = @project.users
+    @users = @project.users.to_a
     additional_user_ids = @committers.map(&:last).map(&:to_i) - @users.map(&:id)
-    @users += User.find_all_by_id(additional_user_ids) unless additional_user_ids.empty?
+    @users += User.where(id: additional_user_ids) unless additional_user_ids.empty?
     @users.compact!
     @users.sort!
     if request.post? && params[:committers].is_a?(Hash)
       # Build a hash with repository usernames as keys and corresponding user ids as values
-      @repository.committer_ids = params[:committers].values.inject({}) { |h, c| h[c.first] = c.last; h }
+      @repository.committer_ids = params[:committers].values
+        .inject({}) { |h, c|
+          h[c.first] = c.last
+          h
+        }
       flash[:notice] = l(:notice_successful_update)
       redirect_to action: 'committers', project_id: @project
     end
@@ -109,18 +114,20 @@ class RepositoriesController < ApplicationController
   end
 
   def destroy
-    if @project.repository.manageable?
+    repository = @project.repository
+    if repository.destroy
       flash[:notice] = I18n.t('repositories.delete_sucessful')
     else
-      flash[:warning] = I18n.t('repositories.errors.unlink_failed_unmanageable')
+      flash[:error] = repository.errors.full_messages
     end
-
-    @project.repository.destroy
     redirect_to settings_repository_tab_path
   end
 
   def show
-    @repository.fetch_changesets if Setting.autofetch_changesets? && @path.blank?
+    if Setting.autofetch_changesets? && @path.blank?
+      @repository.fetch_changesets
+      @repository.update_required_storage
+    end
 
     @entries = @repository.entries(@path, @rev)
     @changeset = @repository.find_changeset_by_name(@rev)
@@ -143,10 +150,17 @@ class RepositoriesController < ApplicationController
 
   def changes
     @entry = @repository.entry(@path, @rev)
-    (show_error_not_found; return) unless @entry
-    @changesets = @repository.latest_changesets(@path, @rev, Setting.repository_log_display_limit.to_i)
+
+    unless @entry
+      show_error_not_found
+      return
+    end
+
+    @changesets = @repository.latest_changesets(@path,
+                                                @rev,
+                                                Setting.repository_log_display_limit.to_i)
     @properties = @repository.properties(@path, @rev)
-    @changeset = @repository.find_changeset_by_name(@rev)
+    @changeset  = @repository.find_changeset_by_name(@rev)
   end
 
   def revisions
@@ -156,14 +170,21 @@ class RepositoriesController < ApplicationController
                   .per_page(per_page_param)
 
     respond_to do |format|
-      format.html { render layout: false if request.xhr? }
-      format.atom { render_feed(@changesets, title: "#{@project.name}: #{l(:label_revision_plural)}") }
+      format.html do
+        render layout: false if request.xhr?
+      end
+      format.atom do
+        render_feed(@changesets, title: "#{@project.name}: #{l(:label_revision_plural)}")
+      end
     end
   end
 
   def entry
     @entry = @repository.entry(@path, @rev)
-    (show_error_not_found; return) unless @entry
+    unless @entry
+      show_error_not_found
+      return
+    end
 
     # If the entry is a dir, show the browser
     if @entry.dir?
@@ -172,7 +193,12 @@ class RepositoriesController < ApplicationController
     end
 
     @content = @repository.cat(@path, @rev)
-    (show_error_not_found; return) unless @content
+
+    unless @content
+      show_error_not_found
+      return
+    end
+
     if 'raw' == params[:format] ||
        (@content.size && @content.size > Setting.file_max_size_displayed.to_i.kilobyte) ||
        !is_entry_text_data?(@content, @path)
@@ -200,7 +226,8 @@ class RepositoriesController < ApplicationController
     # http://apidock.com/ruby/v1_8_6_287/String/is_binary_data%3F
     if ent.respond_to?('is_binary_data?') && ent.is_binary_data? # Ruby 1.8.x and <1.9.2
       return false
-    elsif ent.respond_to?(:force_encoding) && (ent.dup.force_encoding('UTF-8') != ent.dup.force_encoding('BINARY')) # Ruby 1.9.2
+    elsif ent.respond_to?(:force_encoding) &&
+          (ent.dup.force_encoding('UTF-8') != ent.dup.force_encoding('BINARY')) # Ruby 1.9.2
       # TODO: need to handle edge cases of non-binary content that isn't UTF-8
       return false
     end
@@ -211,10 +238,13 @@ class RepositoriesController < ApplicationController
 
   def annotate
     @entry = @repository.entry(@path, @rev)
-    (show_error_not_found; return) unless @entry
 
-    @annotate = @repository.scm.annotate(@path, @rev)
-    (render_error l(:error_scm_annotate); return) if @annotate.nil? || @annotate.empty?
+    unless @entry
+      show_error_not_found
+      return
+    end
+
+    @annotate  = @repository.scm.annotate(@path, @rev)
     @changeset = @repository.find_changeset_by_name(@rev)
   end
 
@@ -225,7 +255,7 @@ class RepositoriesController < ApplicationController
 
     respond_to do |format|
       format.html
-      format.js { render layout: false }
+      format.js do render layout: false end
     end
   rescue ChangesetNotFound
     show_error_not_found
@@ -234,7 +264,12 @@ class RepositoriesController < ApplicationController
   def diff
     if params[:format] == 'diff'
       @diff = @repository.diff(@path, @rev, @rev_to)
-      (show_error_not_found; return) unless @diff
+
+      unless @diff
+        show_error_not_found
+        return
+      end
+
       filename = "changeset_r#{@rev}"
       filename << "_r#{@rev_to}" if @rev_to
       send_data @diff.join,
@@ -251,7 +286,9 @@ class RepositoriesController < ApplicationController
         User.current.preference.save
       end
 
-      @cache_key = "repositories/diff/#{@repository.id}/" + Digest::MD5.hexdigest("#{@path}-#{@rev}-#{@rev_to}-#{@diff_type}")
+      @cache_key = "repositories/diff/#{@repository.id}/" +
+                   Digest::MD5.hexdigest("#{@path}-#{@rev}-#{@rev_to}-#{@diff_type}")
+
       unless read_fragment(@cache_key)
         @diff = @repository.diff(@path, @rev, @rev_to)
         show_error_not_found unless @diff
@@ -302,17 +339,22 @@ class RepositoriesController < ApplicationController
     end
   end
 
-  def settings_repository_tab_path
-    settings_project_path(@project, tab: 'repository')
-  end
-
   def find_repository
     @repository = @project.repository
-    (render_404; return false) unless @repository
 
+    unless @repository
+      render_404
+      return false
+    end
+
+    # Prepare checkout instructions
+    # available on all pages (even empty!)
+    @path = params[:path] || ''
+    @instructions = ::Scm::CheckoutInstructionsService.new(@repository, path: @path)
+
+    # Asserts repository availability, or renders an appropriate error
     @repository.scm.check_availability!
 
-    @path = params[:path] || ''
     @rev = params[:rev].blank? ? @repository.default_branch : params[:rev].to_s.strip
     @rev_to = params[:rev_to]
 
@@ -341,16 +383,30 @@ class RepositoriesController < ApplicationController
     @date_to = Date.today
     @date_from = @date_to << 11
     @date_from = Date.civil(@date_from.year, @date_from.month, 1)
-    commits_by_day = Changeset.where(['repository_id = ? AND commit_date BETWEEN ? AND ?', repository.id, @date_from, @date_to]).group(:commit_date).size
+    commits_by_day = Changeset.where(
+      ['repository_id = ? AND commit_date BETWEEN ? AND ?', repository.id, @date_from, @date_to]
+    ).group(:commit_date).size
     commits_by_month = [0] * 12
-    commits_by_day.each { |c| commits_by_month[(@date_to.month - c.first.to_date.month) % 12] += c.last }
+    commits_by_day.each do |c|
+      commits_by_month[(@date_to.month - c.first.to_date.month) % 12] += c.last
+    end
 
-    changes_by_day = Change.includes(:changeset).where(["#{Changeset.table_name}.repository_id = ? AND #{Changeset.table_name}.commit_date BETWEEN ? AND ?", repository.id, @date_from, @date_to]).group(:commit_date).size
+    changes_by_day = Change.includes(:changeset)
+                     .where(["#{Changeset.table_name}.repository_id = ? "\
+                             "AND #{Changeset.table_name}.commit_date BETWEEN ? AND ?",
+                             repository.id, @date_from, @date_to])
+                     .references(:changesets)
+                     .group(:commit_date)
+                     .size
     changes_by_month = [0] * 12
-    changes_by_day.each { |c| changes_by_month[(@date_to.month - c.first.to_date.month) % 12] += c.last }
+    changes_by_day.each do |c|
+      changes_by_month[(@date_to.month - c.first.to_date.month) % 12] += c.last
+    end
 
     fields = []
-    12.times { |m| fields << month_name(((Date.today.month - 1 - m) % 12) + 1) }
+    12.times do |m|
+      fields << month_name(((Date.today.month - 1 - m) % 12) + 1)
+    end
 
     graph = SVG::Graph::Bar.new(
       height: 300,
@@ -379,10 +435,19 @@ class RepositoriesController < ApplicationController
 
   def graph_commits_per_author(repository)
     commits_by_author = Changeset.where(['repository_id = ?', repository.id]).group(:committer).size
-    commits_by_author.to_a.sort! { |x, y| x.last <=> y.last }
+    commits_by_author.to_a.sort! do |x, y|
+      x.last <=> y.last
+    end
 
-    changes_by_author = Change.includes(:changeset).where(["#{Changeset.table_name}.repository_id = ?", repository.id]).group(:committer).size
-    h = changes_by_author.inject({}) { |o, i| o[i.first] = i.last; o }
+    changes_by_author = Change.includes(:changeset)
+                        .where(["#{Changeset.table_name}.repository_id = ?", repository.id])
+                        .references(:changesets)
+                        .group(:committer)
+                        .size
+    h = changes_by_author.inject({}) { |o, i|
+      o[i.first] = i.last
+      o
+    }
 
     fields = commits_by_author.map(&:first)
     commits_data = commits_by_author.map(&:last)

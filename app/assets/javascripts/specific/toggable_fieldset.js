@@ -38,7 +38,7 @@ function createFieldsetToggleStateLabel(legend, text) {
     legendLink.append(toggleLabel);
   }
 
-  toggleLabel.text(text);
+  toggleLabel.text(' ' + text);
 }
 
 function setFieldsetToggleState(fieldset) {
@@ -77,6 +77,11 @@ function toggleFieldset(el) {
 jQuery(document).ready(function() {
   jQuery('fieldset.form--fieldset.-collapsible').each(function() {
     var fieldset = getFieldset(this);
+
+    var contentArea = fieldset.find('> div');
+    if (fieldset.hasClass('collapsed')) {
+      contentArea.hide();
+    }
 
     setFieldsetToggleState(fieldset);
   });

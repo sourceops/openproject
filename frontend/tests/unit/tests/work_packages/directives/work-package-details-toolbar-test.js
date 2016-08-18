@@ -29,12 +29,13 @@
 /*jshint expr: true*/
 
 describe('workPackageDetailsToolbar', function() {
-  var I18n, HookService, compile, scope, element, stateParams;
-  var html = "<work-package-details-toolbar work-package='workPackage'></work-package-details-toolbar>";
+  var I18n, $q, HookService, compile, scope, element, stateParams;
+  var html = "<wp-details-toolbar work-package='workPackage'></wp-details-toolbar>";
   stateParams = {};
 
 
-  beforeEach(module('ui.router',
+  beforeEach(angular.mock.module('ui.router',
+                    'openproject',
                     'openproject.workPackages.controllers',
                     'openproject.uiComponents',
                     'openproject.workPackages',
@@ -46,20 +47,23 @@ describe('workPackageDetailsToolbar', function() {
                     'openproject.templates'
                     ));
 
-  beforeEach(module('openproject.templates', function($provide) {
+  beforeEach(angular.mock.module('openproject.templates', function($provide) {
     var configurationService = {};
+
+    configurationService.accessibilityModeEnabled = sinon.stub().returns(false);
+    configurationService.warnOnLeavingUnsaved = sinon.stub().returns(false);
 
     $provide.constant('$stateParams', stateParams);
     $provide.constant('ConfigurationService', configurationService);
   }));
 
-  beforeEach(inject(function($rootScope, $compile, _I18n_, _HookService_) {
+  beforeEach(inject(function($rootScope, $compile, _I18n_, _HookService_, _$q_) {
+    $q = _$q_;
     I18n = _I18n_;
     HookService = _HookService_;
     var stub = sinon.stub(I18n, 't');
 
     stub.withArgs('js.button_log_time').returns('Log time');
-    stub.withArgs('js.button_duplicate').returns('Duplicate');
     stub.withArgs('js.button_move').returns('Move');
     stub.withArgs('js.button_delete').returns('Delete');
 
@@ -69,9 +73,8 @@ describe('workPackageDetailsToolbar', function() {
     scope = $rootScope.$new();
 
     compile = function() {
-      angular.element(document).find('body').html('');
-      angular.element(document).find('body').append(element);
       element = $compile(element)(scope);
+      angular.element(document.body).append(element);
       scope.$digest();
       element.find('button:eq(1)').click();
     };
@@ -84,19 +87,27 @@ describe('workPackageDetailsToolbar', function() {
   });
 
   var pluginActions = {
-    plugin_action_1: { plugin_action_1: ['plugin_action_1_css_1', 'plugin_action_1_css_2'] },
-    plugin_action_2: { plugin_action_2: ['plugin_action_2_css_1'] }
+    plugin_action_1: { key: 'plugin_action_1',
+                       resource: 'workPackage',
+                       link: 'plugin_action_1',
+                       css: ['plugin_action_1_css_1', 'plugin_action_1_css_2'] },
+    plugin_action_2: { key: 'plugin_action_2',
+                       resource: 'workPackage',
+                       link: 'plugin_action_2',
+                       css: ['plugin_action_2_css_1'] }
   };
 
   beforeEach(function() {
     var workPackage = {
-      links: {
-        log_time: { href: 'log_timeMeLink' },
-        duplicate: { href: 'duplicateMeLink' },
-        move: { href: 'moveMeLink' },
-        delete: { href: 'deleteMeLink' },
-        plugin_action_1: { href: 'plugin_actionMeLink' },
-        plugin_action_2: { href: 'plugin_actionMeLink' }
+      logTime: { href: 'log_timeMeLink' },
+      duplicate: { href: 'duplicateMeLink' },
+      move: { href: 'moveMeLink' },
+      delete: { href: 'deleteMeLink' },
+      plugin_action_1: { href: 'plugin_actionMeLink' },
+      plugin_action_2: { href: 'plugin_actionMeLink' },
+      project: {
+        $load: function() { return $q.when(true) },
+        createWorkPackage: { href: 'createWorkPackageLink' }
       }
     };
 
@@ -167,8 +178,7 @@ describe('workPackageDetailsToolbar', function() {
   describe('Core actions', function() {
     var listRootSelector = 'ul.dropdown-menu';
     var actions = {
-      log_time: 'icon-log_time',
-      duplicate: 'icon-duplicate',
+      logTime: 'icon-log_time',
       move: 'icon-move',
       delete: 'icon-delete'
     };

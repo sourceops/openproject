@@ -30,10 +30,11 @@
 Then /^I should see membership to the project "(.+)" with the roles:$/ do |project, roles_table|
   project = Project.like(project).first
   steps %{ Then I should see "#{project.name}" within "#tab-content-memberships .memberships" }
+  tab = page.find('#tab-content-memberships .memberships')
 
-  found_roles = page.find(:css, '#tab-content-memberships .memberships').find(:xpath, "//tr[contains(.,'#{project.name}')]").find(:css, 'td.roles span').text.split(',').map(&:strip)
-
-  found_roles.should =~ roles_table.raw.flatten
+  roles_table.raw.flatten.each do |role_name|
+    expect(tab.find('tr', text: project.name)).to have_selector('td.roles span', text: role_name)
+  end
 end
 
 Then /^I should not see membership to the project "(.+)"$/ do |project|
@@ -42,7 +43,7 @@ Then /^I should not see membership to the project "(.+)"$/ do |project|
     page.find(:css, '#tab-content-memberships .memberships')
     steps %{ Then I should not see "#{project.name}" within "#tab-content-memberships .memberships" }
   rescue Capybara::ElementNotFound
-    steps %{ Then I should see "No data to display" within "#tab-content-memberships" }
+    steps %{ Then I should see "This user is currently not a member of a project." within "#tab-content-memberships" }
   end
 end
 
@@ -53,7 +54,7 @@ end
 
 When /^I delete membership to project "(.*?)"$/ do |project|
   project = Project.like(project).first
-  page.find(:css, '#tab-content-memberships .memberships').find(:xpath, "//tr[contains(.,'#{project.name}')]").find(:css, '.icon-delete').click
+  page.find(:css, '#tab-content-memberships .memberships').find(:xpath, "//tr[contains(.,'#{project.name}')]").find(:css, '.icon-remove').click
 end
 
 When /^I edit membership to project "(.*?)" to contain the roles:$/ do |project, roles_table|

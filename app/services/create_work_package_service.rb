@@ -27,26 +27,45 @@
 # See doc/COPYRIGHT.rdoc for more details.
 #++
 
+require 'work_packages/create_contract'
+
 class CreateWorkPackageService
-  attr_accessor :user, :project, :work_package
+  include Concerns::Contracted
 
-  def initialize(user:, project:, send_notifications: true)
-    self.user = user
-    self.project = project
+  self.contract = WorkPackages::CreateContract
 
-    WorkPackageObserver.instance.send_notification = send_notifications
+  attr_reader :user
+
+  def initialize(user:)
+    @user = user
   end
 
-  def create
-    hash = {
-      project: project,
-      author: user,
-      type: project.types.where(is_default: true).first || project.types.first
-    }
-    self.work_package = project.add_work_package(hash)
+  def call(work_package, send_notifications: true)
+    User.execute_as user do
+      JournalManager.with_send_notifications send_notifications do
+        create(work_package)
+      end
+    end
   end
 
-  def save(work_package)
-    work_package.save
+  private
+
+  def create(work_package)
+    initialize_contract(work_package)
+    assign_defaults(work_package)
+
+    result, errors = validate_and_save(work_package)
+
+    ServiceResult.new(success: result,
+                      errors: errors,
+                      result: work_package)
+  end
+
+  def assign_defaults(work_package)
+    work_package.author ||= user
+  end
+
+  def initialize_contract(work_package)
+    self.contract = self.class.contract.new(work_package, user)
   end
 end

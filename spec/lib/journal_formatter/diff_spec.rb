@@ -29,7 +29,6 @@
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper.rb')
 
 describe OpenProject::JournalFormatter::Diff do
-
   include ActionView::Helpers::TagHelper
   # WARNING: the order of the modules is important to ensure that url_for of
   # ActionController::UrlWriter is called and not the one of ActionView::Helpers::UrlHelper
@@ -39,22 +38,20 @@ describe OpenProject::JournalFormatter::Diff do
     Rails.application.routes.url_helpers
   end
 
-  Struct.new('TestJournal', :id, :journable)
-
   let(:klass) { OpenProject::JournalFormatter::Diff }
   let(:id) { 1 }
   let(:journal) do
-    Struct::TestJournal.new(id, WorkPackage.new)
+    OpenStruct.new(id: id, journable: WorkPackage.new)
   end
   let(:instance) { klass.new(journal) }
   let(:key) { 'description' }
 
   let(:url) {
-    url_helper.journal_diff_path(id: journal.id,
+    url_helper.diff_journal_path(id: journal.id,
                                  field: key.downcase)
   }
   let(:full_url) {
-    url_helper.journal_diff_url(id: journal.id,
+    url_helper.diff_journal_url(id: journal.id,
                                 field: key.downcase,
                                 protocol: Setting.protocol,
                                 host: Setting.host_name)
@@ -85,7 +82,6 @@ describe OpenProject::JournalFormatter::Diff do
 
     describe "WITH the first value beeing a string, and the second a string
               WITH de as locale" do
-
       let(:expected) {
         I18n.t(:text_journal_changed_with_diff,
                label: '<strong>Beschreibung</strong>',

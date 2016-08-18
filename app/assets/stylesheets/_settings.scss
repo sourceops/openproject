@@ -53,7 +53,7 @@ $include-css: (
   badge: false,
   list: false,
   menu-bar: false,
-  modal: false,
+  modal: true,
   motion: false,
   notification: true,
   off-canvas: false,
@@ -120,7 +120,7 @@ $include-css: (
 
 // These are our named breakpoints. You can use them in our breakpoint function like this: @include breakpoint(medium) { // Medium and larger styles }
 $breakpoints: (
-  small: rem-calc(300),
+  small: rem-calc(480),
   medium: rem-calc(640),
   large: rem-calc(1200),
   xlarge: rem-calc(1440),
@@ -365,14 +365,14 @@ $form-padding: 0.375rem;
 
 // Select menus
 // $select-color: #000;
-// $select-background: #fafafa;
-// $select-background-hover: smartscale($select-background, 4%);
+$select-background: #fff;
+$select-background-hover: smartscale($select-background, 0%);
 // $select-arrow: true;
 // $select-arrow-color: $select-color;
 
 // Labels
 // $form-label-fontsize: 0.9rem;
-// $form-label-margin: 0.5rem;
+// $form-label-margin: 0rem;
 // $form-label-color: #333;
 
 // Inline labels

@@ -29,7 +29,7 @@
 require 'spec_helper'
 require 'features/work_packages/work_packages_page'
 
-describe 'Work package index accessibility', type: :feature do
+describe 'Work package index accessibility', type: :feature, selenium: true do
   let(:user) { FactoryGirl.create(:admin) }
   let(:project) { FactoryGirl.create(:project) }
   let(:work_package) { FactoryGirl.create(:work_package, project: project) }
@@ -40,12 +40,12 @@ describe 'Work package index accessibility', type: :feature do
   def visit_index_page
     work_packages_page.visit_index
     # ensure the page is loaded before expecting anything
-    expect(page).to have_selector('#operators-status_id', visible: false),
-                    "Page was not fully loaded"
+    expect(page).to have_selector('#operators-status', visible: false),
+                    'Page was not fully loaded'
   end
 
   before do
-    allow(User).to receive(:current).and_return(user)
+    login_as(user)
 
     work_package
   end
@@ -63,15 +63,15 @@ describe 'Work package index accessibility', type: :feature do
   end
 
   describe 'Select all link' do
-    let(:link_selector) { 'table.workpackages-table th.checkbox a' }
+    let(:link_selector) { '.work-package-table--container th.checkbox a' }
 
-    before { visit_index_page }
+    before do visit_index_page end
 
     describe 'Initial state', js: true do
       it { expect(page).to have_selector(link_selector) }
 
       context 'attributes' do
-        before { expect(page).to have_selector(link_selector) }
+        before do expect(page).to have_selector(link_selector) end
 
         it { expect(find(link_selector)[:title]).to eq(I18n.t(:button_check_all)) }
 
@@ -91,7 +91,7 @@ describe 'Work package index accessibility', type: :feature do
   end
 
   describe 'Sort link', js: true do
-    before { visit_index_page }
+    before do visit_index_page end
 
     def click_sort_ascending_link
       expect(page).to have_selector(sort_ascending_selector)
@@ -108,30 +108,24 @@ describe 'Work package index accessibility', type: :feature do
     shared_examples_for 'sort column' do
       it do
         expect(page).to have_selector(column_header_selector)
-        expect(find(column_header_selector + ' span.sort-header')[:title]).to eq(sort_text)
       end
     end
 
     shared_examples_for 'unsorted column' do
-      let(:sort_text) { I18n.t(:label_open_menu) }
-
       it_behaves_like 'sort column'
     end
 
     shared_examples_for 'ascending sorted column' do
-      let(:sort_text) { "#{I18n.t(:label_ascending)} #{I18n.t(:label_sorted_by, value: "\"#{link_caption}\"")}" }
-
       it_behaves_like 'sort column'
     end
 
     shared_examples_for 'descending sorted column' do
-      let(:sort_text) { "#{I18n.t(:label_descending)} #{I18n.t(:label_sorted_by, value: "\"#{link_caption}\"")}" }
-
       it_behaves_like 'sort column'
     end
 
+
     shared_examples_for 'sortable column' do
-      before { expect(page).to have_selector(column_header_selector) }
+      before do expect(page).to have_selector(column_header_selector) end
 
       describe 'Initial sort' do
         it_behaves_like 'unsorted column'
@@ -141,6 +135,7 @@ describe 'Work package index accessibility', type: :feature do
         before do
           find(column_header_link_selector).click
           click_sort_descending_link
+          loading_indicator_saveguard
         end
 
         it_behaves_like 'descending sorted column'
@@ -150,6 +145,7 @@ describe 'Work package index accessibility', type: :feature do
         before do
           find(column_header_link_selector).click
           click_sort_ascending_link
+          loading_indicator_saveguard
         end
 
         it_behaves_like 'ascending sorted column'
@@ -158,34 +154,7 @@ describe 'Work package index accessibility', type: :feature do
 
     describe 'id column' do
       let(:link_caption) { 'ID' }
-      let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(2)' }
-      let(:column_header_link_selector) { column_header_selector + ' a' }
-
-      it_behaves_like 'sortable column'
-    end
-    # Disabling type for now. This constantly flickers.
-    # I am aware that this might indicate a bug but I haven't
-    # been able to reproduce it. FWIW, there are other tests
-    # testing the same functionality.
-    # describe 'type column' do
-    #   let(:link_caption) { 'Type' }
-    #   let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(3)' }
-    #   let(:column_header_link_selector) { column_header_selector + ' a' }
-
-    #   it_behaves_like 'sortable column'
-    # end
-
-    describe 'status column' do
-      let(:link_caption) { 'Status' }
-      let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(4)' }
-      let(:column_header_link_selector) { column_header_selector + ' a' }
-
-      it_behaves_like 'sortable column'
-    end
-
-    describe 'priority column' do
-      let(:link_caption) { 'Priority' }
-      let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(5)' }
+      let(:column_header_selector) { '.work-package-table--container th:nth-of-type(2)' }
       let(:column_header_link_selector) { column_header_selector + ' a' }
 
       it_behaves_like 'sortable column'
@@ -193,7 +162,23 @@ describe 'Work package index accessibility', type: :feature do
 
     describe 'subject column' do
       let(:link_caption) { 'Subject' }
-      let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(6)' }
+      let(:column_header_selector) { '.work-package-table--container th:nth-of-type(3)' }
+      let(:column_header_link_selector) { column_header_selector + ' a' }
+
+      it_behaves_like 'sortable column'
+    end
+
+    describe 'type column' do
+      let(:link_caption) { 'Type' }
+      let(:column_header_selector) { '.work-package-table--container th:nth-of-type(4)' }
+      let(:column_header_link_selector) { column_header_selector + ' a' }
+
+      it_behaves_like 'sortable column'
+    end
+
+    describe 'status column' do
+      let(:link_caption) { 'Status' }
+      let(:column_header_selector) { '.work-package-table--container th:nth-of-type(5)' }
       let(:column_header_link_selector) { column_header_selector + ' a' }
 
       it_behaves_like 'sortable column'
@@ -201,7 +186,7 @@ describe 'Work package index accessibility', type: :feature do
 
     describe 'assigned to column' do
       let(:link_caption) { 'Assignee' }
-      let(:column_header_selector) { 'table.workpackages-table th:nth-of-type(7)' }
+      let(:column_header_selector) { '.work-package-table--container th:nth-of-type(6)' }
       let(:column_header_link_selector) { column_header_selector + ' a' }
 
       it_behaves_like 'sortable column'
@@ -217,14 +202,14 @@ describe 'Work package index accessibility', type: :feature do
       FactoryGirl.create(:work_package,
                          project: project)
     }
-    before { visit_index_page }
+    before do visit_index_page end
 
     context 'focus' do
       let(:first_link_selector) do
-        'table.keyboard-accessible-list tbody tr:first-child td.id a'
+        'table.keyboard-accessible-list tbody tr:first-child .wp-table--details-link'
       end
       let(:second_link_selector) do
-        'table.keyboard-accessible-list tbody tr:nth-child(2) td.id a'
+        'table.keyboard-accessible-list tbody tr:nth-child(2) .wp-table--details-link'
       end
 
       it 'navigates with J' do
@@ -247,57 +232,56 @@ describe 'Work package index accessibility', type: :feature do
   end
 
   describe 'context menus' do
-
     before do
-      window = Capybara.current_session.driver.browser.manage.window
-      window.maximize
-
       visit_index_page
     end
 
     shared_examples_for 'context menu' do
-      describe 'focus' do
-        before do
-          expect(page).to have_selector(source_link)
-          element = find(source_link)
-          element.native.send_keys(keys)
-        end
+      it 'resets the context menu focus properly' do
+        expect(page).to have_selector(source_link)
+        element = find(source_link)
+        element.native.send_keys(keys)
 
-        it { expect(page).to have_focus_on(target_link) }
+        # Expect to open and focus the menu
+        expect(page).to have_focus_on(target_link) if sets_focus
+        element = find(target_link)
 
-        describe 'reset' do
-          before do
-            expect(page).to have_selector(target_link)
-            element = find(target_link)
-            element.native.send_keys(:escape)
-            expect(page).not_to have_selector(target_link)
-          end
+        element.native.send_keys(:escape)
+        expect(page).not_to have_selector(target_link)
 
-          it { expect(page).to have_focus_on(source_link) }
-        end
-
+        # Expect reset focus on originating element
+        expect(page).to have_focus_on(source_link) if sets_focus
       end
     end
 
     describe 'work package context menu', js: true do
       it_behaves_like 'context menu' do
-        let(:target_link) { '#work-package-context-menu li.open a' }
-        let(:source_link) { '.workpackages-table tr.issue td.id a' }
+        let(:target_link) { '#work-package-context-menu li.detailsViewMenuItem a' }
+        let(:source_link) { '.work-package-table--container tr.issue td.id a' }
         let(:keys) { [:shift, :alt, :f10] }
+        let(:sets_focus) { true }
+      end
+
+      it_behaves_like 'context menu' do
+        let(:target_link) { '#work-package-context-menu li.openFullScreenView a' }
+        let(:source_link) { '.work-package-table--container tr.issue td.id a' }
+        let(:keys) { [:shift, :alt, :f10] }
+        let(:sets_focus) { false }
       end
     end
 
     describe 'column header drop down menu', js: true do
       it_behaves_like 'context menu' do
-        let(:source_link) { 'table.workpackages-table th:nth-of-type(2) a' }
+        let(:source_link) { '.work-package-table--container th:nth-of-type(2) a' }
         let(:target_link) { '#column-context-menu .dropdown-menu li:first-of-type a' }
         let(:keys) { :enter }
+        let(:sets_focus) { true }
       end
     end
   end
 
   describe 'settings button', js: true do
-    before { visit_index_page }
+    before do visit_index_page end
 
     shared_examples_for 'menu setting item' do
       context 'closable by ESC and remembers focus on gear button' do
@@ -318,7 +302,6 @@ describe 'Work package index accessibility', type: :feature do
     end
 
     context 'gear button' do
-
       context 'columns popup anchor' do
         it_behaves_like 'menu setting item' do
           let (:anchor) { find('#settingsDropdown .dropdown-menu li:nth-child(1) a') }

@@ -28,12 +28,8 @@
 #++
 
 class Watcher < ActiveRecord::Base
-  include Redmine::SafeAttributes
-
   belongs_to :watchable, polymorphic: true
   belongs_to :user
-
-  attr_accessible :watchable, :user, :user_id
 
   validates_presence_of :watchable, :user
   validates_uniqueness_of :user_id, scope: [:watchable_type, :watchable_id]
@@ -47,7 +43,7 @@ class Watcher < ActiveRecord::Base
       prune_single_user(options[:user], options)
     else
       pruned = 0
-      User.find(:all, conditions: "id IN (SELECT DISTINCT user_id FROM #{table_name})").each do |user|
+      User.where("id IN (SELECT DISTINCT user_id FROM #{table_name})").each do |user|
         pruned += prune_single_user(user, options)
       end
       pruned
@@ -73,11 +69,15 @@ class Watcher < ActiveRecord::Base
   def self.prune_single_user(user, options = {})
     return unless user.is_a?(User)
     pruned = 0
-    find(:all, conditions: { user_id: user.id }).each do |watcher|
+    where(user_id: user.id).each do |watcher|
       next if watcher.watchable.nil?
 
       if options.has_key?(:project)
         next unless watcher.watchable.respond_to?(:project) && watcher.watchable.project == options[:project]
+      end
+
+      if options.has_key?(:project_id)
+        next unless watcher.watchable.respond_to?(:project_id) && watcher.watchable.project_id == options[:project_id]
       end
 
       if watcher.watchable.respond_to?(:visible?)

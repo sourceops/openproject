@@ -43,8 +43,12 @@ module OpenProject
           @path_encoding = path_encoding.presence || 'UTF-8'
         end
 
+        def checkout_command
+          'git clone'
+        end
+
         def client_command
-          @client_command ||= config[:client_command] || 'git'
+          @client_command ||= self.class.config[:client_command] || 'git'
         end
 
         def client_version
@@ -69,7 +73,7 @@ module OpenProject
         ##
         # Create a bare repository for the current path
         def initialize_bare_git
-          capture_git(%w[init --bare])
+          capture_git(%w[init --bare --shared])
         end
 
         ##
@@ -79,7 +83,16 @@ module OpenProject
         # @raise [ScmUnavailable] raised when repository is unavailable.
         def check_availability!
           out, = Open3.capture2e(client_command, *build_git_cmd(%w[log -- HEAD]))
-          raise Exceptions::ScmEmpty if out.include?("fatal: bad default revision 'HEAD'")
+
+          if out.include?("fatal: bad default revision 'HEAD'")
+            raise Exceptions::ScmEmpty
+          end
+
+          # Starting with Git 2.5.2, 2.6.1, the empty repository warning has been improved
+          # https://github.com/git/git/commit/ce113604672fed9b429b1c162b1005794fff6a17
+          if out =~ /fatal: your current branch .+ does not have any commits yet/i
+            raise Exceptions::ScmEmpty
+          end
 
           # If it not empty, it should have at least one readable branch.
           raise Exceptions::ScmUnavailable unless branches.size > 0
@@ -296,23 +309,20 @@ module OpenProject
 
         def annotate(path, identifier = nil)
           identifier = 'HEAD' if identifier.blank?
-          args = %w|blame|
+          args = %w|blame --encoding=UTF-8|
           args << '-p' << identifier << '--' << scm_encode(@path_encoding, 'UTF-8', path)
           blame = Annotate.new
           content = capture_git(args, binmode: true)
 
-          if content.respond_to?(:force_encoding) &&
-             (content.dup.force_encoding('UTF-8') != content.dup.force_encoding('BINARY'))
-
-            # Ruby 1.9.2
-            # TODO: need to handle edge cases of non-binary content that isn't UTF-8
-            return nil
-          end
+          # Deny to parse large binary files
+          # Quick test for null bytes, this may not match all files,
+          # but should be a reasonable workaround
+          return nil if content.dup.force_encoding('BINARY').count("\x00") > 0
 
           identifier = ''
           # git shows commit author on the first occurrence only
           authors_by_commit = {}
-          content.split("\n").each do |line|
+          content.scrub.split("\n").each do |line|
             if line =~ /^([0-9a-f]{39,40})\s.*/
               identifier = $1
             elsif line =~ /^author (.+)/
@@ -345,7 +355,7 @@ module OpenProject
           end
         end
 
-        private
+        protected
 
         ##
         # Builds the full git arguments from the parameters

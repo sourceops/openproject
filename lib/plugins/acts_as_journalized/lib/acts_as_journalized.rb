@@ -91,7 +91,9 @@ module Redmine
 
           journal_hash = prepare_journaled_options(journal_hash)
 
-          has_many :journals, journal_hash, &block
+          has_many :journals, -> {
+            order("#{Journal.table_name}.version ASC")
+          }, journal_hash, &block
         end
 
         private

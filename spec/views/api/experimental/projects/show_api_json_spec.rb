@@ -29,16 +29,12 @@
 require File.expand_path('../../../../../spec_helper', __FILE__)
 
 describe 'api/experimental/projects/show.api.rabl', type: :view do
-  let(:principal) { FactoryGirl.build(:principal) }
-  let(:members)   { FactoryGirl.build_list(:member, 3, principal: principal) }
   let(:types)     { FactoryGirl.build_list(:type,   2) }
 
   let(:project)   {
     FactoryGirl.build(:project,
-                      possible_responsible_members: members,
-                      possible_assignee_members:    members,
-                      types:                        types
-  )
+                      types:                 types
+                     )
   }
 
   before do
@@ -48,15 +44,10 @@ describe 'api/experimental/projects/show.api.rabl', type: :view do
     render
   end
 
-  subject { response.body }
+  subject { rendered }
 
   it { is_expected.to have_json_path('project') }
   it { is_expected.to have_json_path('project/name') }
 
-  it { is_expected.to have_json_path('project/embedded/possible_responsibles') }
-  it { is_expected.to have_json_path('project/embedded/possible_assignees')    }
-
-  it { is_expected.to have_json_size(3).at_path('project/embedded/possible_responsibles') }
-  it { is_expected.to have_json_size(3).at_path('project/embedded/possible_assignees') }
   it { is_expected.to have_json_size(2).at_path('project/embedded/types') }
 end

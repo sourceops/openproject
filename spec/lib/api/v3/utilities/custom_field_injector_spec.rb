@@ -55,12 +55,10 @@ describe ::API::V3::Utilities::CustomFieldInjector do
       double('WorkPackageSchema',
              project: double(id: 42),
              defines_assignable_values?: true,
-             available_custom_fields: [custom_field],
-             assignable_versions: versions)
+             available_custom_fields: [custom_field])
     }
-    let(:versions) { [] }
 
-    subject { modified_class.new(schema, form_embedded: true).to_json }
+    subject { modified_class.new(schema, current_user: nil, form_embedded: true).to_json }
 
     describe 'basic custom field' do
       it_behaves_like 'has basic schema properties' do
@@ -118,13 +116,18 @@ describe ::API::V3::Utilities::CustomFieldInjector do
 
     describe 'version custom field' do
       let(:custom_field) {
-        FactoryGirl.build(:custom_field,
-                          field_format: 'version',
+        FactoryGirl.build(:version_wp_custom_field,
                           is_required: true)
       }
+
       let(:assignable_versions) { FactoryGirl.build_list(:version, 3) }
 
       before do
+        allow(schema)
+          .to receive(:assignable_custom_field_values)
+          .with(custom_field)
+          .and_return(assignable_versions)
+
         allow(::API::V3::Versions::VersionRepresenter).to receive(:new).and_return(double)
       end
 
@@ -138,20 +141,28 @@ describe ::API::V3::Utilities::CustomFieldInjector do
 
       it_behaves_like 'links to allowed values directly' do
         let(:path) { cf_path }
-        let(:hrefs) { versions.map { |version| api_v3_paths.version version.id } }
+        let(:hrefs) { assignable_versions.map { |version| api_v3_paths.version version.id } }
       end
 
       it 'embeds allowed values' do
         # N.B. we do not use the stricter 'links to and embeds allowed values directly' helper
         # because this would not allow us to easily mock the VersionRepresenter away
-        is_expected.to have_json_size(versions.size).at_path("#{cf_path}/_embedded/allowedValues")
+        is_expected
+          .to have_json_size(assignable_versions.size)
+          .at_path("#{cf_path}/_embedded/allowedValues")
       end
     end
 
     describe 'list custom field' do
+      before do
+        allow(schema)
+          .to receive(:assignable_custom_field_values)
+          .with(custom_field)
+          .and_return(custom_field.possible_values)
+      end
+
       let(:custom_field) {
-        FactoryGirl.build(:custom_field,
-                          field_format: 'list',
+        FactoryGirl.build(:list_wp_custom_field,
                           is_required: true,
                           possible_values: values)
       }
@@ -202,7 +213,9 @@ describe ::API::V3::Utilities::CustomFieldInjector do
       it 'on writing it sets on the represented' do
         expected = { custom_field.id => expected_setter }
         expect(represented).to receive(:custom_field_values=).with(expected)
-        modified_class.new(represented).from_json({ cf_path => json_value }.to_json)
+        modified_class
+          .new(represented, current_user: nil)
+          .from_json({ cf_path => json_value }.to_json)
       end
     end
 
@@ -346,12 +359,12 @@ describe ::API::V3::Utilities::CustomFieldInjector do
     context 'text custom field' do
       it_behaves_like 'injects property custom field' do
         let(:field_format) { 'text' }
-        let(:value) { 'Foobar' }
+        let(:value) { '*Foobar*' }
         let(:json_value) do
           {
-            format: 'plain',
+            format: 'textile',
             raw: value,
-            html: "<p>#{value}</p>"
+            html: '<p><strong>Foobar</strong></p>'
           }
         end
         let(:expected_setter) { value }
@@ -370,7 +383,7 @@ describe ::API::V3::Utilities::CustomFieldInjector do
     }
     let(:custom_value) { double('CustomValue', value: value) }
     let(:value) { '' }
-    subject { "{ \"_links\": #{modified_class.new(represented).to_json} }" }
+    subject { "{ \"_links\": #{modified_class.new(represented, current_user: nil).to_json} }" }
 
     before do
       allow(represented).to receive(:custom_value_for).with(custom_field).and_return(custom_value)
@@ -403,7 +416,7 @@ describe ::API::V3::Utilities::CustomFieldInjector do
         expected = { custom_field.id => '2' }
 
         expect(represented).to receive(:custom_field_values=).with(expected)
-        modified_class.new(represented).from_json(json)
+        modified_class.new(represented, current_user: nil).from_json(json)
       end
 
       it 'accepts an empty link' do
@@ -411,7 +424,7 @@ describe ::API::V3::Utilities::CustomFieldInjector do
         expected = { custom_field.id => nil }
 
         expect(represented).to receive(:custom_field_values=).with(expected)
-        modified_class.new(represented).from_json(json)
+        modified_class.new(represented, current_user: nil).from_json(json)
       end
     end
   end

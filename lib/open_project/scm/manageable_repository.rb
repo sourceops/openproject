@@ -30,32 +30,71 @@
 module OpenProject
   module Scm
     module ManageableRepository
-      ##
-      # We let SCM vendor implementation define their own
-      # types (e.g., for differences in the management of
-      # local vs. remote repositories).
-      #
-      # But if they are manageable by OpenProject, they must
-      # expose this type through +available_types+.
-      MANAGED_TYPE = :managed
-      ##
-      # Reads from configuration whether new repositories of this kind
-      # may be managed from OpenProject.
-      def manageable?
-        !managed_root.nil?
+      def self.included(base)
+        base.extend(ClassMethods)
+
+        ##
+        # Take note when projects are renamed and check for associated managed repositories
+        OpenProject::Notifications.subscribe('project_renamed') do |payload|
+          repository = payload[:project].repository
+
+          if repository && repository.managed?
+            Delayed::Job.enqueue ::Scm::RelocateRepositoryJob.new(repository)
+          end
+        end
       end
 
-      ##
-      # Returns the managed root for this repository vendor
-      def managed_root
-        scm.config[:manages]
+      module ClassMethods
+        ##
+        # We let SCM vendor implementation define their own
+        # types (e.g., for differences in the management of
+        # local vs. remote repositories).
+        #
+        # But if they are manageable by OpenProject, they must
+        # expose this type through +available_types+.
+        def managed_type
+          :managed
+        end
+
+        ##
+        # Reads from configuration whether new repositories of this kind
+        # may be managed from OpenProject.
+        def manageable?
+          !(disabled_types.include?(managed_type) || managed_root.nil?)
+        end
+
+        ##
+        # Returns the managed root for this repository vendor
+        def managed_root
+          scm_config[:manages]
+        end
+
+        ##
+        # Returns the managed remote for this repository vendor,
+        # if any. Use +manages_remote?+ to determine whether the configuration
+        # specifies local or remote managed repositories.
+        def managed_remote
+          URI.parse(scm_config[:manages])
+        rescue URI::Error
+          nil
+        end
+
+        ##
+        # Returns whether the managed root is a remote URL to post to
+        def manages_remote?
+          managed_remote.present? && managed_remote.absolute?
+        end
+      end
+
+      def manageable?
+        self.class.manageable?
       end
 
       ##
       # Determines whether this repository IS currently managed
       # by openproject
       def managed?
-        scm_type.to_sym == MANAGED_TYPE
+        scm_type.to_sym == self.class.managed_type
       end
 
       ##
@@ -73,7 +112,7 @@ module OpenProject
       # Used only in the creation of a repository, at a later point
       # in time, it is referred to in the root_url
       def managed_repository_path
-        File.join(managed_root, repository_path)
+        File.join(self.class.managed_root, repository_identifier)
       end
 
       ##
@@ -86,47 +125,11 @@ module OpenProject
       end
 
       ##
-      # Determine the parent path of the given project
-      def parent_projects_path
-        File.join(*parent_projects)
-      end
-
-      ##
-      # Determine all parent projects of this repository
-      def parent_projects
-        parent_parts = []
-        p = project
-        while p.parent
-          parent_id = p.parent.identifier.to_s
-          parent_parts.unshift(parent_id)
-          p = p.parent
-        end
-
-        parent_parts
-      end
-
-      protected
-
-      ##
       # Repository relative path from scm managed root.
       # Will be overridden by including models to, e.g.,
       # append '.git' to that path.
       def repository_identifier
         project.identifier
-      end
-
-      private
-
-      ##
-      # Generate a uniquely identified path from the project
-      # hierarchy.
-      def repository_path
-        parent_path = parent_projects_path
-        if parent_path.empty?
-          repository_identifier
-        else
-          File.join(parent_path, repository_identifier)
-        end
       end
     end
   end

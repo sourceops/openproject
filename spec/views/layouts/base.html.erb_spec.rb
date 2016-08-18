@@ -29,6 +29,11 @@
 require 'spec_helper'
 
 describe 'layouts/base', type: :view do
+  # This is to make `visit` available. It might be already included by the time
+  # we reach this spec, but for running this spec alone we need it here. Best
+  # of both worlds.
+  include Capybara::DSL
+
   include Redmine::MenuManager::MenuHelper
   helper Redmine::MenuManager::MenuHelper
   let!(:user) { FactoryGirl.create :user }
@@ -49,7 +54,7 @@ describe 'layouts/base', type: :view do
       end
 
       it 'the projects menu should not be displayed' do
-        expect(response).not_to have_text('Projects')
+        expect(rendered).not_to have_text('Projects')
       end
     end
 
@@ -61,7 +66,7 @@ describe 'layouts/base', type: :view do
       end
 
       it 'the projects menu should be displayed' do
-        expect(response).to have_text('Projects')
+        expect(rendered).to have_text('Projects')
       end
     end
   end
@@ -78,19 +83,20 @@ describe 'layouts/base', type: :view do
       end
 
       it 'shows the login drop down menu' do
-        expect(response).to have_selector "div[id='nav-login-content']"
+        expect(rendered).to have_selector('div#nav-login-content', visible: false)
       end
     end
 
-    context 'with omni_auth_direct_login enabled' do
+    context 'with omni_auth_direct_login enabled',
+             with_config: { omniauth_direct_login_provider: 'some_provider' } do
+
       before do
-        expect(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('some_provider')
         render
       end
 
       it 'shows just a sign-in link, no menu' do
-        expect(response).to have_selector "a[href='/login']"
-        expect(response).not_to have_selector "div[id='nav-login-content']"
+        expect(rendered).to have_selector "a[href='/login']"
+        expect(rendered).not_to have_selector 'div#nav-login-content'
       end
     end
   end
@@ -107,8 +113,8 @@ describe 'layouts/base', type: :view do
       end
 
       it 'shows a login form' do
-        expect(response).to include 'Login'
-        expect(response).to include 'Password'
+        expect(rendered).to include 'Login'
+        expect(rendered).to include 'Password'
       end
     end
 
@@ -119,9 +125,47 @@ describe 'layouts/base', type: :view do
       end
 
       it 'shows no password login form' do
-        expect(response).not_to include 'Login'
-        expect(response).not_to include 'Password'
+        expect(rendered).not_to include 'Login'
+        expect(rendered).not_to include 'Password'
       end
+    end
+  end
+
+
+  describe 'icons' do
+    before do
+      allow(User).to receive(:current).and_return anonymous
+      allow(view).to receive(:current_user).and_return anonymous
+      render
+    end
+
+    it 'renders main favicon' do
+      expect(rendered).to have_selector(
+        "link[type='image/x-icon'][href='/assets/favicon.ico']",
+        visible: false
+      )
+    end
+
+    it 'renders apple icons' do
+      expect(rendered).to have_selector(
+        "link[type='image/png'][href='/assets/apple-touch-icon-120x120-precomposed.png']",
+        visible: false
+      )
+    end
+
+    # We perform a get request against the icons to ensure they are there (and
+    # avoid 404 errors in production). Should you continue to see 404s in production,
+    # ensure your asset cache is not stale.
+
+    # We do this here as opposed to a request spec to 1. keep icon specs contained
+    # in one place, and 2. the view itself makes this request, so this is an appropriate
+    # location for it.
+    it 'icons actually exist' do
+      visit 'assets/favicon.ico'
+      expect(page.status_code).to eq(200)
+
+      visit 'apple-touch-icon-120x120-precomposed.png'
+      expect(page.status_code).to eq(200)
     end
   end
 end

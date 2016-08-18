@@ -34,6 +34,7 @@ describe Group, type: :model do
 
   let(:group) { FactoryGirl.build(:group) }
   let(:user) { FactoryGirl.build(:user) }
+  let(:watcher) { FactoryGirl.create :user }
   let(:project) { FactoryGirl.create(:project_with_types) }
   let(:status) { FactoryGirl.create(:status) }
   let(:package) {
@@ -46,6 +47,9 @@ describe Group, type: :model do
   describe '#destroy' do
     describe 'work packages assigned to the group' do
       before do
+        group.add_member! user
+        group.add_member! watcher
+
         become_member_with_permissions project, group, [:view_work_packages]
         package.assigned_to = group
 
@@ -67,6 +71,22 @@ describe Group, type: :model do
 
         expect(package.journals.all? { |j| j.data.assigned_to_id == DeletedUser.first.id }).to be_truthy
       end
+
+      describe 'watchers' do
+        before do
+          package.watcher_users << watcher
+        end
+
+        context 'with user only in project through group' do
+          it 'should remove the watcher' do
+            group.destroy
+            package.reload
+            project.reload
+
+            expect(package.watchers).to be_empty
+          end
+        end
+      end
     end
   end
 
@@ -77,9 +97,22 @@ describe Group, type: :model do
       it { expect(group.valid?).to be_falsey }
 
       describe 'error message' do
-        before { group.valid? }
+        before do group.valid? end
 
         it { expect(group.errors.full_messages[0]).to include I18n.t('attributes.groupname') }
+      end
+    end
+  end
+
+  describe 'preference' do
+    %w{preference
+       preference=
+       build_preference
+       create_preference
+       create_preference!}.each do |method|
+
+      it "should not respond to #{method}" do
+        expect(group).to_not respond_to method
       end
     end
   end

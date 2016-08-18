@@ -202,6 +202,14 @@ Then /^(?:|I )should see \/([^\/]*)\/$/ do |regexp|
   should have_content(regexp)
 end
 
+Then(/^(?:|I )should not see "([^"]*)" in the same table row as "([^"]*)"$/) do |text1, text2|
+  within('table.generic-table tbody') do
+    page.all(:xpath, "//tr/td[contains(.,'#{text2}')]/following-sibling::td").each do |td|
+      expect(td).to have_no_content(text1)
+    end
+  end
+end
+
 Then /^(?:|I )should not see "([^"]*)"$/ do |text|
   regexp = Regexp.new(Regexp.escape(text), Regexp::IGNORECASE)
   page.should have_no_content(regexp)
@@ -252,19 +260,19 @@ Then /^the "([^"]*)" field should have no error$/ do |field|
   classes.should_not include('error')
 end
 
-Then /^the (hidden )?"([^"]*)" checkbox should be checked$/ do |hidden, label |
+Then /^the (hidden )?"([^"]*)" checkbox should be checked$/ do |hidden, label|
   field_checked = find_field(label, visible: hidden.nil?)['checked']
   field_checked.should be_truthy
 end
 
-Then /^the (hidden )?"([^"]*)" checkbox should not be checked$/ do |hidden, label |
+Then /^the (hidden )?"([^"]*)" checkbox should not be checked$/ do |hidden, label|
   field_checked = find_field(label, visible: hidden.nil?)['checked']
   field_checked.should be_falsey
 end
 
 Then /^(?:|I )should be on (.+)$/ do |page_name|
   current_path = URI.parse(current_url).path
-  current_path.should == path_to(page_name)
+  CGI.unescape(current_path).should == CGI.unescape(path_to(page_name))
 end
 
 Then /^(?:|I )should have the following query string:$/ do |expected_pairs|
@@ -277,7 +285,9 @@ Then /^(?:|I )should have the following query string:$/ do |expected_pairs|
 end
 
 Then /^show me the page$/ do
-  save_and_open_page
+  # save_and_open_page
+  sleep 2 # sleep to ensure page has been fully loaded
+  save_and_open_screenshot
 end
 
 # newly generated until here
@@ -288,20 +298,7 @@ When /^I wait(?: (\d+) seconds)? for(?: the)? [Aa][Jj][Aa][Xx](?: requests?(?: t
     while !is_done
       is_done = page.evaluate_script(%{
         (function (){
-          var done = true;
-
-          if (window.jQuery) {
-            if (document.ajaxActive) {
-              done = false;
-            }
-          }
-          if (window.Prototype && window.Ajax) {
-            if (window.Ajax.activeRequestCount != 0) {
-              done = false;
-            }
-          }
-
-          return done;
+          return !(window.jQuery && document.ajaxActive);
         }())
       }.gsub("\n", ''))
     end
@@ -342,7 +339,6 @@ Then /^the "([^\"]*)" select(?: within "([^\"]*)")? should have the following op
   options_expected = option_table.raw.flatten
 
   with_scope(selector) do
-
     field = find_field(field)
     options_actual = field.all('option').map(&:text)
     options_actual.should =~ options_expected
@@ -353,6 +349,10 @@ Then /^there should be the disabled "(.+)" element$/ do |element|
   page.find(element)[:disabled].should == 'true'
 end
 
+Then /^the element "(.+)" should be invalid$/ do |element|
+  expect(page).to have_selector("#{element}:invalid")
+end
+
 # This needs an active js driver to work properly
 Given /^I (accept|dismiss) the alert dialog$/ do |method|
   if Capybara.current_driver.to_s.include?('selenium')
@@ -361,7 +361,7 @@ Given /^I (accept|dismiss) the alert dialog$/ do |method|
 end
 
 Then(/^(.*) in the new window$/) do |step|
-  new_window = page.driver.browser.window_handles.last
+  new_window = windows.last
   page.within_window new_window do
     step(step)
   end

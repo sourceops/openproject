@@ -49,7 +49,7 @@ module Queries::WorkPackages::AvailableFilterOptions
     available_work_package_filters.has_key?(key.to_s)
   end
 
-  def get_custom_field_options(custom_fields)
+  def get_custom_field_options(custom_fields, v3_naming: false)
     filters = {}
     custom_fields.select(&:is_filter?).each do |field|
       case field.field_format
@@ -62,14 +62,21 @@ module Queries::WorkPackages::AvailableFilterOptions
       when 'date'
         options = { type: :date, order: 20 }
       when 'bool'
-        options = { type: :list, values: [[l(:general_text_yes), '1'], [l(:general_text_no), '0']], order: 20 }
+        options = { type: :list,
+                    values: [[l(:general_text_yes), ActiveRecord::Base.connection.unquoted_true],
+                             [l(:general_text_no), ActiveRecord::Base.connection.unquoted_false]],
+                    order: 20 }
       when 'user', 'version'
         next unless project
         options = { type: :list_optional, values: field.possible_values_options(project), order: 20 }
       else
         options = { type: :string, order: 20 }
       end
-      filters["cf_#{field.id}"] = options.merge(name: field.name)
+
+      filter_key = "cf_#{field.id}"
+      filter_key = API::Utilities::PropertyNameConverter.from_ar_name(filter_key) if v3_naming
+
+      filters[filter_key] = options.merge(name: field.name)
     end
     filters
   end
@@ -77,7 +84,7 @@ module Queries::WorkPackages::AvailableFilterOptions
   private
 
   def visible_projects
-    @visible_projects ||= Project.visible.all
+    @visible_projects ||= Project.visible
   end
 
   def get_principals
@@ -94,12 +101,12 @@ module Queries::WorkPackages::AvailableFilterOptions
   # options for available filters
 
   def setup_available_work_package_filters
-    types = project.nil? ? Type.find(:all, order: 'position') : project.rolled_up_types
+    types = project.nil? ? ::Type.order('position') : project.rolled_up_types
 
     @available_work_package_filters = {
       status_id:       { type: :list_status, order: 1, values: Status.all.map { |s| [s.name, s.id.to_s] } },
       type_id:         { type: :list, order: 2, values: types.map { |s| [s.name, s.id.to_s] } },
-      priority_id:     { type: :list, order: 3, values: IssuePriority.all.map { |s| [s.name, s.id.to_s] } },
+      priority_id:     { type: :list, order: 3, values: IssuePriority.active.map { |s| [s.name, s.id.to_s] } },
       subject:         { type: :text, order: 8 },
       created_at:      { type: :date_past, order: 9 },
       updated_at:      { type: :date_past, order: 10 },
@@ -132,21 +139,21 @@ module Queries::WorkPackages::AvailableFilterOptions
 
   def add_project_options
     # project specific filters
-    categories = project.categories.all
+    categories = project.categories
     unless categories.empty?
       @available_work_package_filters['category_id'] = { type: :list_optional, order: 6, values: categories.map { |s| [s.name, s.id.to_s] } }
     end
-    versions = project.shared_versions.all
+    versions = project.shared_versions
     unless versions.empty?
       @available_work_package_filters['fixed_version_id'] = { type: :list_optional, order: 7, values: versions.sort.map { |s| ["#{s.project.name} - #{s.name}", s.id.to_s] }, name: WorkPackage.human_attribute_name('fixed_version_id') }
     end
     unless project.leaf?
-      subprojects = project.descendants.visible.all
+      subprojects = project.descendants.visible
       unless subprojects.empty?
         @available_work_package_filters['subproject_id'] = { type: :list_subprojects, order: 13, values: subprojects.map { |s| [s.name, s.id.to_s] }, name: I18n.t('query_fields.subproject_id') }
       end
     end
-    add_custom_fields_options(project.all_work_package_custom_fields)
+    add_custom_fields_options(project.all_work_package_custom_fields(include: :translations))
   end
 
   def add_user_options
@@ -161,11 +168,11 @@ module Queries::WorkPackages::AvailableFilterOptions
                       []
 
     assigned_to_values = (user_values + group_values).sort
-    assigned_to_values = [["<< #{l(:label_me)} >>", 'me']] + assigned_to_values if User.current.logged?
+    assigned_to_values = [[l(:label_me), 'me']] + assigned_to_values if User.current.logged?
     @available_work_package_filters['assigned_to_id'] = { type: :list_optional, order: 4, values: assigned_to_values, name: WorkPackage.human_attribute_name('assigned_to_id') } unless assigned_to_values.empty?
 
     author_values = []
-    author_values << ["<< #{l(:label_me)} >>", 'me'] if User.current.logged?
+    author_values << [l(:label_me), 'me'] if User.current.logged?
     author_values += user_values
     @available_work_package_filters['author_id'] = { type: :list, order: 5, values: author_values, name: WorkPackage.human_attribute_name('author_id') } unless author_values.empty?
 
@@ -176,14 +183,14 @@ module Queries::WorkPackages::AvailableFilterOptions
     @available_work_package_filters['assigned_to_role'] = { type: :list_optional, order: 7, values: role_values, name: I18n.t('query_fields.assigned_to_role') } unless role_values.empty?
 
     responsible_values = user_values.dup
-    responsible_values = [["<< #{l(:label_me)} >>", 'me']] + responsible_values if User.current.logged?
+    responsible_values = [[l(:label_me), 'me']] + responsible_values if User.current.logged?
     @available_work_package_filters['responsible_id'] = { type: :list_optional, order: 4, values: responsible_values, name: WorkPackage.human_attribute_name('responsible_id') } unless responsible_values.empty?
 
     # watcher filters
     if User.current.logged?
       # populate the watcher list with the same user list as other user filters if the user has the :view_work_package_watchers permission in at least one project
       # TODO: this could be differentiated more, e.g. all users could watch issues in public projects, but won't necessarily be shown here
-      watcher_values = [["<< #{l(:label_me)} >>", 'me']]
+      watcher_values = [[l(:label_me), 'me']]
       user_values.each { |v| watcher_values << v } if User.current.allowed_to_globally?(:view_work_packages_watchers, {})
       @available_work_package_filters['watcher_id'] = { type: :list, order: 15, values: watcher_values, name: WorkPackage.human_attribute_name('watcher_id') }
     end
@@ -191,11 +198,12 @@ module Queries::WorkPackages::AvailableFilterOptions
 
   def add_global_options
     # global filters for cross project issue list
-    system_shared_versions = Version.visible.find_all_by_sharing('system')
+    system_shared_versions = Version.visible.where(sharing: 'system')
     unless system_shared_versions.empty?
       @available_work_package_filters['fixed_version_id'] = { type: :list_optional, order: 7, values: system_shared_versions.sort.map { |s| ["#{s.project.name} - #{s.name}", s.id.to_s] }, name: WorkPackage.human_attribute_name('fixed_version_id') }
     end
-    add_custom_fields_options(WorkPackageCustomField.find(:all, conditions: { is_filter: true, is_for_all: true }))
+    add_custom_fields_options(WorkPackageCustomField.where(is_filter: true, is_for_all: true)
+                                                    .includes(:translations))
   end
 
   def add_custom_fields_options(custom_fields)

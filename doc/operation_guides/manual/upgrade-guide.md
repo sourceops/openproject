@@ -1,3 +1,84 @@
+# OpenProject 5.0.x to OpenProject 6.0 Debian/Ubuntu Upgrade Guide
+
+Upgrading your OpenProject 5.0.x installation to 6.0 is very easy. Please upgrade your OpenProject installation first to the latest stable 6.0 path.
+If you checked out the OpenProject installation through Git, you can use the `stable/6` branch which points to the latest stable release.
+
+```bash
+[openproject@debian]# cd /home/openproject/openproject
+[openproject@debian]# git fetch && git checkout stable/6
+```
+
+After upgrading the installation files, you need to migrate the installation to OpenProject 6.0 with the following steps:
+
+```bash
+[openproject@debian]# cd /home/openproject/openproject
+[openproject@debian]# npm install
+[openproject@debian]# RAILS_ENV="production" bundle exec rake db:migrate
+[openproject@debian]# RAILS_ENV="production" bundle exec rake db:seed
+[openproject@debian]# RAILS_ENV="production" bundle exec rake assets:precompile
+[openproject@debian]# touch tmp/restart.txt
+```
+
+After performing these steps, the server should be running OpenProject 6.0.x.
+
+
+# OpenProject 4.2 to OpenProject 5.0 Debian/Ubuntu Upgrade Guide
+
+One of the main new features of OpenProject 5.0 is that it provides management of repositories directly within the user interface (with so-called *managed* repositories).
+
+Starting with OpenProject 5.0, you can explicitly select the SCM vendor you want to associate to your project, and let OpenProject generate the repository on the filesystem on the fly.
+
+If you haven't configured serving repositories through Apache before, you'll find the [repository integration guide](./repository-integration.md) to guide you through the necessary steps to configure this integration.
+
+For the other steps necessary to upgrade to OpenProject 5.0 please look
+at the sections below and exchange `v4.1.0` with `v5.0.0`.
+
+## Changed Rails Path
+
+OpenProject 5.0 employs Rails 4.2.x, which contains a number of changes regarding paths. Foremost, files previously located in the `scripts` directory now reside in `bin` (e.g., `delayed_job`).
+
+### Secret Token
+
+With an update to Rails 4.1+, you now must generate a secret key base for the production environment with `./bin/rake secret` and make that available through the environment variable `SECRET_KEY_BASE`.
+
+You will likely set the environment variable in `/etc/environment` or use your server's environment mechanism (i.e., `SetEnv` in Apache).
+
+## Upgrading to Managed Repositories
+
+You can create repositories explicitly on the filesystem using managed repositories.
+Enable managed repositories for each SCM vendor individually using the templates
+defined in configuration.yml. For more information, please refer to the [repository integration guide](./repository-integration.md).
+
+This functionality was previously provided as a cron job `reposman.rb`.
+This script has been integrated into OpenProject.
+Please remove any existing cronjobs that still use this script.
+
+### Convert Repositories Created by Reposman
+
+If you want to convert existing repositories previously created (by reposman.rb or manually)
+into managed repositories, use the following command:
+
+    $ ./bin/rake scm:migrate:managed[URL prefix (, URL prefix, ...)]
+
+the URL prefix denotes a common prefix of repositories whose status should be upgraded to `:managed`.
+Example:
+
+If you have executed reposman.rb with the following parameters:
+
+    $ reposman.rb [...] --svn-dir "/opt/svn" --url "file:///opt/svn"
+
+Then you can pass the task a URL prefix `file:///opt/svn` and the rake task will migrate all repositories
+matching this prefix to `:managed`.
+You may pass more than one URL prefix to the task.
+
+### Listing Potential Conflicting Identifiers
+
+As managed repositories on the filesystem are uniquely associated using the project identifier, any existing directories in the managed repositories root *may* cause a conflict in the future when trying to create a repository with the same name.
+
+To help you identify these conflicts, you can run the following rake task, which will list entries in the managed repositories path with no associated project:
+
+    $ ./bin/rake scm:find_unassociated
+
 # OpenProject 4.1 to OpenProject 4.2 Debian/Ubuntu Upgrade Guide
 
 Please look at the steps in the section about the upgrade to OpenProject 4.1. Just exchange `v4.1.0` to `v4.2.0` when checking out the git repository.
@@ -115,7 +196,17 @@ As a reference, the following Node.js and NPM versions have been installed on ou
 
 ## The Upgrade
 
-Now that the sources and dependencies are in place, you can migrate the Database and do the upgrade:
+Now that the sources and dependencies are in place, you can migrate the Database and do the upgrade.
+
+Before actually migrating the database, please remove all temporary files from the previous installation (caches, sessions) by running the following command.
+
+```bash
+[openproject@debian]# cd /home/openproject/openproject
+[openproject@debian]# RAILS_ENV="production" bundle exec rake tmp:clear
+```
+
+If you do not clear the temporary files, you may encounter an error of the form `NoMethodError: undefined method `map' for #<String ..>` in the `config/initializers/30-patches.rb` files.
+The actual upgrade commands are as follows:
 
 ```bash
 [openproject@debian]# cd /home/openproject/openproject
@@ -127,6 +218,8 @@ Now that the sources and dependencies are in place, you can migrate the Database
 ```
 
 *Side note:* If you are using `RAILS_ENV="development"` the task `bundle exec rake assets:webpack` needs to be run. This step is not necessary for `production` because it is part of the `asset:precompile` tasks.
+
+**NOTE** `db:seed` can also be invoked with a 'LOCALE' environment variable defined, specifying the language in which to seed. Note however, that specifying different locales for calls to `db:seed` might lead to a mixture of languages in your data. It is therefore advisable to use the same language for all calls to `db:seed`.
 
 ## The Aftermath
 * Re-enable the `delayed_job` cron job that was disabled in the first step.

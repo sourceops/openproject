@@ -40,7 +40,6 @@ describe AccountController, type: :controller do
     let(:admin) { FactoryGirl.create(:admin) }
 
     describe 'User logging in with back_url' do
-
       it 'should redirect to a relative path' do
         post :login, username: admin.login, password: 'adminADMIN!', back_url: '/'
         expect(response).to redirect_to root_path
@@ -69,7 +68,7 @@ describe AccountController, type: :controller do
       end
 
       it 'should not redirect to logout' do
-        post :login , :username => admin.login, :password => 'adminADMIN!', :back_url => '/logout'
+        post :login, username: admin.login, password: 'adminADMIN!', back_url: '/logout'
         expect(response).to redirect_to my_page_path
       end
 
@@ -82,7 +81,7 @@ describe AccountController, type: :controller do
                                                                auth_source_id: 66)
         post :login, username: 'foo', password: 'bar'
 
-        expect(response).to redirect_to my_first_login_path
+        expect(response).to redirect_to home_url(first_time_user: true)
         user = User.find_by_login('foo')
         expect(user).to be_an_instance_of User
         expect(user.auth_source_id).to eq(66)
@@ -91,12 +90,12 @@ describe AccountController, type: :controller do
 
       context 'with a relative url root' do
         before do
-          @old_relative_url_root = ApplicationController.relative_url_root
-          ApplicationController.relative_url_root = '/openproject'
+          @old_relative_url_root = OpenProject::Configuration['rails_relative_url_root']
+          OpenProject::Configuration['rails_relative_url_root'] = '/openproject'
         end
 
         after do
-          ApplicationController.relative_url_root = @old_relative_url_root
+          OpenProject::Configuration['rails_relative_url_root'] = @old_relative_url_root
         end
 
         it 'should redirect to the same subdirectory with an absolute path' do
@@ -141,7 +140,6 @@ describe AccountController, type: :controller do
           expect(response).to redirect_to my_page_path
         end
       end
-
     end
 
     describe 'for a user trying to log in via an API request' do
@@ -173,10 +171,8 @@ describe AccountController, type: :controller do
     end
   end
 
-  describe '#login with omniauth_direct_login enabled' do
-    before do
-      allow(Concerns::OmniauthLogin).to receive(:direct_login_provider).and_return('some_provider')
-    end
+  describe '#login with omniauth_direct_login enabled',
+            with_config: { omniauth_direct_login_provider: 'some_provider' } do
 
     describe 'GET' do
       it 'redirects to some_provider' do
@@ -293,32 +289,36 @@ describe AccountController, type: :controller do
   context 'POST #register' do
     context 'with self registration on automatic' do
       before do
+        allow(OpenProject::Configuration).to receive(:disable_password_login?).and_return(false)
         allow(Setting).to receive(:self_registration).and_return('3')
       end
 
       context 'with password login enabled' do
-        before do
-          post :register, user: {
-            login: 'register',
-            password: 'adminADMIN!',
-            password_confirmation: 'adminADMIN!',
-            firstname: 'John',
-            lastname: 'Doe',
-            mail: 'register@example.com'
-          }
-        end
+        # expects `redirect_to_path`
+        shared_examples 'automatic self registration succeeds' do
+          before do
+            post :register, user: {
+              login: 'register',
+              password: 'adminADMIN!',
+              password_confirmation: 'adminADMIN!',
+              firstname: 'John',
+              lastname: 'Doe',
+              mail: 'register@example.com'
+            }
+          end
 
-        it 'redirects to first_login page' do
-          is_expected.to respond_with :redirect
-          expect(assigns[:user]).not_to be_nil
-          is_expected.to redirect_to(my_first_login_path)
-          expect(User.last(conditions: { login: 'register' })).not_to be_nil
-        end
+          it 'redirects to my page' do
+            is_expected.to respond_with :redirect
+            expect(assigns[:user]).not_to be_nil
+            is_expected.to redirect_to(redirect_to_path)
+            expect(User.where(login: 'register').last).not_to be_nil
+          end
 
-        it 'set the user status to active' do
-          user = User.last(conditions: { login: 'register' })
-          expect(user).not_to be_nil
-          expect(user.status).to eq(User::STATUSES[:active])
+          it 'set the user status to active' do
+            user = User.where(login: 'register').last
+            expect(user).not_to be_nil
+            expect(user.status).to eq(User::STATUSES[:active])
+          end
         end
       end
 
@@ -357,7 +357,7 @@ describe AccountController, type: :controller do
 
         it "doesn't activate the user but sends out a token instead" do
           expect(User.find_by_login('register')).not_to be_active
-          token = Token.find(:first)
+          token = Token.first
           expect(token.action).to eq('register')
           expect(token.user.mail).to eq('register@example.com')
           expect(token).not_to be_expired
@@ -443,7 +443,6 @@ describe AccountController, type: :controller do
     end
 
     context 'with on-the-fly registration' do
-
       before do
         allow(Setting).to receive(:self_registration).and_return('0')
         allow(Setting).to receive(:self_registration?).and_return(false)
@@ -502,5 +501,4 @@ describe AccountController, type: :controller do
       end
     end
   end
-
 end

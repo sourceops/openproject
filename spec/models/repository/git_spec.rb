@@ -33,11 +33,42 @@ describe Repository::Git, type: :model do
   let(:instance) { FactoryGirl.build(:repository_git, path_encoding: encoding) }
   let(:adapter)  { instance.scm }
   let(:config)   { {} }
+  let(:enabled_scm) { %w[git] }
 
   before do
-    allow(Setting).to receive(:enabled_scm).and_return(['Git'])
+    allow(Setting).to receive(:enabled_scm).and_return(enabled_scm)
     allow(instance).to receive(:scm).and_return(adapter)
-    allow(adapter).to receive(:config).and_return(config)
+    allow(adapter.class).to receive(:config).and_return(config)
+  end
+
+  describe 'when disabled' do
+    let(:enabled_scm) { [] }
+
+    it 'does not allow creating a repository' do
+      expect { instance.save! }.to raise_error ActiveRecord::RecordInvalid
+    end
+  end
+
+  describe 'available types' do
+    it 'allow local by default' do
+      expect(instance.class.available_types).to eq([:local])
+    end
+
+    context 'with disabled types' do
+      let(:config) { { disabled_types: [:local, :managed] } }
+
+      it 'does not have any types' do
+        expect(instance.class.available_types).to be_empty
+      end
+    end
+
+    context 'with mixed disabled types' do
+      let(:config) { { disabled_types: [:local, 'managed'] } }
+
+      it 'does not have any types' do
+        expect(instance.class.available_types).to be_empty
+      end
+    end
   end
 
   describe 'managed git' do
@@ -49,10 +80,36 @@ describe Repository::Git, type: :model do
     context 'with managed config' do
       let(:config) { { manages: managed_path } }
       let(:project) { FactoryGirl.build :project }
-      let(:identifier) { "#{project.identifier}.git" }
+      let(:identifier) { project.identifier + '.git' }
 
       it 'is manageable' do
         expect(instance.manageable?).to be true
+        expect(instance.class.available_types).to eq([:local, :managed])
+      end
+
+      context 'with disabled managed typed' do
+        let(:config) { { disabled_types: [:managed] } }
+
+        it 'is no longer manageable' do
+          expect(instance.class.available_types).to eq([:local])
+          expect(instance.manageable?).to be false
+        end
+      end
+
+      context 'with string disabled types' do
+        before do
+          allow(OpenProject::Configuration).to receive(:default_override_source)
+            .and_return('OPENPROJECT_SCM_GIT_DISABLED__TYPES' => '[managed,local]')
+
+          OpenProject::Configuration.load
+          allow(adapter.class).to receive(:config).and_call_original
+        end
+
+        it 'is no longer manageable' do
+          expect(instance.class.available_types).to eq([])
+          expect(instance.class.disabled_types).to eq([:managed, :local])
+          expect(instance.manageable?).to be false
+        end
       end
 
       context 'and associated project' do
@@ -78,7 +135,7 @@ describe Repository::Git, type: :model do
 
         it 'outputs the correct hierarchy path' do
           expect(instance.managed_repository_path)
-            .to eq(File.join(managed_path, parent.identifier, identifier))
+            .to eq(File.join(managed_path, identifier))
         end
       end
     end
@@ -87,7 +144,12 @@ describe Repository::Git, type: :model do
   describe 'with an actual repository' do
     with_git_repository do |repo_dir|
       let(:url)      { repo_dir }
-      let(:instance) { FactoryGirl.create(:repository_git, path_encoding: encoding, url: url) }
+      let(:instance) {
+        FactoryGirl.create(:repository_git,
+                           path_encoding: encoding,
+                           url: url,
+                           root_url: url)
+      }
 
       before do
         instance.fetch_changesets
@@ -99,8 +161,8 @@ describe Repository::Git, type: :model do
       end
 
       it 'should fetch changesets from scratch' do
-        expect(instance.changesets.count).to eq(21)
-        expect(instance.changes.count).to eq(33)
+        expect(instance.changesets.count).to eq(22)
+        expect(instance.file_changes.count).to eq(34)
 
         commit = instance.changesets.reorder('committed_on ASC').first
         expect(commit.comments).to eq("Initial import.\nThe repository contains 3 files.")
@@ -111,29 +173,29 @@ describe Repository::Git, type: :model do
         expect(commit.commit_date).to eq('2007-12-14'.to_date)
         expect(commit.revision).to eq('7234cb2750b63f47bff735edc50a1c0a433c2518')
         expect(commit.scmid).to eq('7234cb2750b63f47bff735edc50a1c0a433c2518')
-        expect(commit.changes.count).to eq(3)
+        expect(commit.file_changes.count).to eq(3)
 
-        change = commit.changes.sort_by(&:path).first
+        change = commit.file_changes.sort_by(&:path).first
         expect(change.path).to eq('README')
         expect(change.action).to eq('A')
       end
 
       it 'should fetch changesets incremental' do
         # Remove the 3 latest changesets
-        instance.changesets.find(:all, order: 'committed_on DESC', limit: 8).each(&:destroy)
+        instance.changesets.order('committed_on DESC').limit(8).each(&:destroy)
         instance.reload
-        expect(instance.changesets.count).to eq(13)
+        expect(instance.changesets.count).to eq(14)
 
         rev_a_commit = instance.changesets.order('committed_on DESC').first
-        expect(rev_a_commit.revision).to eq('4f26664364207fa8b1af9f8722647ab2d4ac5d43')
-        expect(rev_a_commit.scmid).to eq('4f26664364207fa8b1af9f8722647ab2d4ac5d43')
+        expect(rev_a_commit.revision).to eq('ed5bb786bbda2dee66a2d50faf51429dbc043a7b')
+        expect(rev_a_commit.scmid).to eq('ed5bb786bbda2dee66a2d50faf51429dbc043a7b')
         # Mon Jul 5 22:34:26 2010 +0200
-        committed_on = Time.gm(2010, 7, 5, 20, 34, 26)
+        committed_on = Time.gm(2010, 9, 18, 19, 59, 46)
         expect(rev_a_commit.committed_on).to eq(committed_on)
         expect(instance.latest_changeset.committed_on).to eq(committed_on)
 
         instance.fetch_changesets
-        expect(instance.changesets.count).to eq(21)
+        expect(instance.changesets.count).to eq(22)
       end
 
       describe '.latest_changesets' do
@@ -272,7 +334,7 @@ describe Repository::Git, type: :model do
       end
 
       it 'should next nil' do
-        %w|1ca7f5ed374f3cb31a93ae5215c2e25cc6ec5127 1ca7f5ed|.each do |r1|
+        %w|71e5c1d3dca6304805b143b9d0e6695fb3895ea4 71e5c1d3|.each do |r1|
           changeset = instance.find_changeset_by_name(r1)
           expect(changeset.next).to be_nil
         end
@@ -338,6 +400,13 @@ describe Repository::Git, type: :model do
           end
         end
       end
+
+      it_behaves_like 'is a countable repository' do
+        let(:repository) { instance }
+      end
+
     end
   end
+
+  it_behaves_like 'repository can be relocated', :git
 end

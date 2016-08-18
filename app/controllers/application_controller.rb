@@ -30,19 +30,6 @@
 require 'uri'
 require 'cgi'
 
-# There is a circular dependency chain between User, Principal, and Project
-# If anybody triggers the loading of User first, Rails fails to autoload
-# the three. Defining class User depends on the resolution of the Principal constant.
-# Triggering autoload of the User class does not immediately define the User constant
-# while Principal and Project dont inherit from something undefined.
-# This means they will be defined as constants right after their autoloading
-# was triggered. When Rails discovers it has to load the undefined class User
-# during the load circle while noticing it has already tried to load it (the
-# first load of user), it will complain about user being an undefined constant.
-# Requiring this dependency here ensures Principal is loaded first in development
-# on each request.
-require_dependency 'principal'
-
 class ApplicationController < ActionController::Base
   class_attribute :_model_object
   class_attribute :_model_scope
@@ -50,6 +37,7 @@ class ApplicationController < ActionController::Base
 
   protected
 
+  include I18n
   include Redmine::I18n
 
   layout 'base'
@@ -102,7 +90,19 @@ class ApplicationController < ActionController::Base
     # is raised here, but is denied by disable_api.
     #
     # See http://stackoverflow.com/a/15350123 for more information on login CSRF.
-    render_error status: 422, message: 'Invalid form authenticity token.' unless api_request?
+    unless api_request?
+
+      # Check whether user have cookies enabled, otherwise they'll only be
+      # greeted with the CSRF error upon login.
+      message = I18n.t(:error_token_authenticity)
+      message << ' ' + I18n.t(:error_cookie_missing) if openproject_cookie_missing?
+      render_error status: 422, message: message
+    end
+  end
+
+  rescue_from ActionController::ParameterMissing do |exception|
+    render text:   "Required parameter missing: #{exception.param}",
+           status: :bad_request
   end
 
   before_filter :user_setup,
@@ -112,7 +112,8 @@ class ApplicationController < ActionController::Base
                 :set_localization,
                 :check_session_lifetime,
                 :stop_if_feeds_disabled,
-                :set_cache_buster
+                :set_cache_buster,
+                :reload_mailer_configuration!
 
   include Redmine::Search::Controller
   include Redmine::MenuManager::MenuController
@@ -133,6 +134,10 @@ class ApplicationController < ActionController::Base
       response.headers['Pragma'] = 'no-cache'
       response.headers['Expires'] = 'Fri, 01 Jan 1990 00:00:00 GMT'
     end
+  end
+
+  def reload_mailer_configuration!
+    OpenProject::Configuration.reload_mailer_configuration!
   end
 
   # The current user is a per-session kind of thing and session stuff is controller responsibility.
@@ -160,7 +165,7 @@ class ApplicationController < ActionController::Base
   def find_current_user
     if session[:user_id]
       # existing session
-      (User.active.find(session[:user_id], include: [:memberships]) rescue nil)
+      User.active.includes(:memberships).find_by(id: session[:user_id])
     elsif cookies[OpenProject::Configuration['autologin_cookie_name']] && Setting.autologin?
       # auto-login feature starts a new session
       user = User.try_to_autologin(cookies[OpenProject::Configuration['autologin_cookie_name']])
@@ -173,7 +178,7 @@ class ApplicationController < ActionController::Base
       if (key = api_key_from_request) && accept_key_auth_actions.include?(params[:action])
         # Use API key
         User.find_by_api_key(key)
-      else
+      elsif OpenProject::Configuration.apiv2_enable_basic_auth?
         # HTTP Basic, either username/password or API key/random
         authenticate_with_http_basic do |username, password|
           User.try_to_login(username, password) || User.find_by_api_key(username)
@@ -201,6 +206,13 @@ class ApplicationController < ActionController::Base
     require_login if Setting.login_required?
   end
 
+  # Checks if the session cookie is missing.
+  # This is useful only on a second request
+  def openproject_cookie_missing?
+    request.cookies[OpenProject::Configuration['session_cookie_name']].nil?
+  end
+  helper_method :openproject_cookie_missing?
+
   def log_requesting_user
     return unless Setting.log_requesting_user?
     login_and_mail = " (#{escape_for_logging(User.current.login)} ID: #{User.current.id} " \
@@ -223,17 +235,7 @@ class ApplicationController < ActionController::Base
   end
 
   def set_localization
-    lang = nil
-    lang = find_language(User.current.language) if User.current.logged?
-    if lang.nil? && request.env['HTTP_ACCEPT_LANGUAGE']
-      accept_lang = parse_qvalues(request.env['HTTP_ACCEPT_LANGUAGE']).first
-      unless accept_lang.blank?
-        accept_lang = accept_lang.downcase
-        lang = find_language(accept_lang) || find_language(accept_lang.split('-').first)
-      end
-    end
-    lang ||= Setting.default_language
-    set_language_if_valid(lang)
+    SetLocalizationService.new(User.current, request.env['HTTP_ACCEPT_LANGUAGE']).call
   end
 
   def require_login
@@ -249,7 +251,7 @@ class ApplicationController < ActionController::Base
                       project_id: params[:project_id])
       end
       respond_to do |format|
-        format.any(:html, :atom) { redirect_to signin_path(back_url: url) }
+        format.any(:html, :atom) do redirect_to signin_path(back_url: url) end
 
         auth_header = OpenProject::Authentication::WWWAuthenticate.response_header(
           request_headers: request.headers)
@@ -405,21 +407,13 @@ class ApplicationController < ActionController::Base
   # Filter for bulk work package operations
   def find_work_packages
     @work_packages = WorkPackage.includes(:project)
-                     .find_all_by_id(params[:work_package_id] || params[:ids])
+                     .where(id: params[:work_package_id] || params[:ids])
+                     .order('id ASC')
     fail ActiveRecord::RecordNotFound if @work_packages.empty?
     @projects = @work_packages.map(&:project).compact.uniq
     @project = @projects.first if @projects.size == 1
   rescue ActiveRecord::RecordNotFound
     render_404
-  end
-
-  # Check if project is unique before bulk operations
-  def check_project_uniqueness
-    unless @project
-      # TODO: let users bulk edit/move/destroy issues from different projects
-      render_error 'Can not bulk edit/move/destroy issues from different projects'
-      return false
-    end
   end
 
   # Make sure that the user is a member of the project (or admin) if project is private
@@ -443,58 +437,15 @@ class ApplicationController < ActionController::Base
     params[:back_url] || request.env['HTTP_REFERER']
   end
 
-  def redirect_back_or_default(default, escape = true, use_escaped = true)
-    escaped_back_url = if escape
-                         URI.escape(CGI.unescape(params[:back_url].to_s))
-                       else
-                         params[:back_url]
-               end
+  def redirect_back_or_default(default, use_escaped = true)
+    policy = RedirectPolicy.new(
+      params[:back_url],
+      hostname: request.host,
+      default: default,
+      return_escaped: use_escaped,
+    )
 
-    # if we have a back_url it must not contain two consecutive dots
-    if escaped_back_url.present? && !escaped_back_url.match(/\.\./)
-      begin
-        uri = URI.parse(escaped_back_url)
-
-        # do not redirect user to another host (even protocol relative urls have the host set)
-        # whenever a host is set it must match the request's host
-        uri_local_to_host = uri.host.nil? || uri.host == request.host
-
-        # do not redirect user to the login or register page
-        uri_path_allowed  = !uri.path.match(ignored_back_url_regex)
-
-        # do not redirect to another subdirectory
-        uri_subdir_allowed = relative_url_root.blank? || uri.path.match(/\A#{relative_url_root}/)
-
-        if uri_local_to_host && uri_path_allowed && uri_subdir_allowed
-          if use_escaped
-            redirect_to(escaped_back_url)
-          else
-            redirect_to(back_url)
-          end
-          return
-        end
-      rescue URI::InvalidURIError
-        # redirect to default
-      end
-    end
-    redirect_to default
-    false
-  end
-
-  ##
-  # URLs that match the returned regex must be ignored when they are the back url.
-  def ignored_back_url_regex
-    %r{/(
-      # Ignore login since redirect to back url is result of successful login.
-      login |
-      # When signing out with a direct login provider enabled you will be left at the logout
-      # page with a message indicating that you were logged out. Logging in from there would
-      # normally cause you to be redirected to this page. As it is the logout page, however,
-      # this would log you right out again after a successful login.
-      logout |
-      # TODO explain reasoning for this
-      account/register
-      )}x # ignore whitespace
+    redirect_to policy.redirect_url
   end
 
   def render_400(options = {})
@@ -554,7 +505,9 @@ class ApplicationController < ActionController::Base
       format.html do
         render template: 'common/error', layout: use_layout, status: @status
       end
-      format.any(:atom, :xml, :js, :json, :pdf, :csv) { head @status }
+      format.any(:atom, :xml, :js, :json, :pdf, :csv) do
+        head @status
+      end
     end
   end
 
@@ -567,7 +520,7 @@ class ApplicationController < ActionController::Base
 
   def render_feed(items, options = {})
     @items = items || []
-    @items.sort! { |x, y| y.event_datetime <=> x.event_datetime }
+    @items = @items.sort { |x, y| y.event_datetime <=> x.event_datetime }
     @items = @items.slice(0, Setting.feeds_limit.to_i)
     @title = options[:title] || Setting.app_title
     render template: 'common/feed', layout: false, content_type: 'application/atom+xml'
@@ -580,28 +533,6 @@ class ApplicationController < ActionController::Base
 
   def accept_key_auth_actions
     self.class.accept_key_auth_actions || []
-  end
-
-  # qvalues http header parser
-  # code taken from webrick
-  def parse_qvalues(value)
-    tmp = []
-    if value
-      parts = value.split(/,\s*/)
-      parts.each do |part|
-        match = /\A([^\s,]+?)(?:;\s*q=(\d+(?:\.\d+)?))?\z/.match(part)
-        if match
-          val = match[1]
-          q = (match[2] || 1).to_f
-          tmp.push([val, q])
-        end
-      end
-      tmp = tmp.sort_by { |_val, q| -q }
-      tmp.map! { |val, _q| val }
-    end
-    return tmp
-  rescue
-    nil
   end
 
   # Returns a string that can be used as filename value in Content-Disposition header
@@ -644,9 +575,9 @@ class ApplicationController < ActionController::Base
 
   # Converts the errors on an ActiveRecord object into a common JSON format
   def object_errors_to_json(object)
-    object.errors.map do |attribute, error|
+    object.errors.map { |attribute, error|
       { attribute => error }
-    end.to_json
+    }.to_json
   end
 
   # Renders API response on validation failure

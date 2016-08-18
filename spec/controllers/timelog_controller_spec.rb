@@ -46,7 +46,7 @@ describe TimelogController, type: :controller do
   let(:project_id) { project.id }
   let(:work_package_id) { '' }
 
-  before { allow(User).to receive(:current).and_return(user) }
+  before do login_as(user) end
 
   describe '#create' do
     shared_examples_for 'successful timelog creation' do
@@ -57,7 +57,7 @@ describe TimelogController, type: :controller do
 
     context 'project' do
       describe '#valid' do
-        before { post :create, params }
+        before do post :create, params end
 
         it_behaves_like 'successful timelog creation'
       end
@@ -65,9 +65,41 @@ describe TimelogController, type: :controller do
       describe '#invalid' do
         let(:project_id) { -1 }
 
-        before { post :create, params }
+        before do post :create, params end
 
         it { expect(response.status).to eq(404) }
+      end
+
+      context 'with a required custom field' do
+        let!(:custom_field) do
+          FactoryGirl.create :time_entry_custom_field,
+                             name: 'supplies',
+                             is_required: true
+        end
+
+        describe 'which is given' do
+          before do
+            params[:time_entry][:custom_field_values] = { custom_field.id.to_s => 'wurst' }
+
+            post :create, params
+          end
+
+          it_behaves_like 'successful timelog creation'
+        end
+
+        describe 'which is omitted' do
+          render_views
+
+          before do
+            params[:time_entry][:custom_field_values] = { "42" => 'wurst' }
+
+            post :create, params
+          end
+
+          it 'is rejected' do
+            expect(response.body).to include 'supplies can&#39;t be blank'
+          end
+        end
       end
     end
 
@@ -79,7 +111,7 @@ describe TimelogController, type: :controller do
         }
         let(:work_package_id) { work_package.id }
 
-        before { post :create, params }
+        before do post :create, params end
 
         it_behaves_like 'successful timelog creation'
       end
@@ -87,7 +119,7 @@ describe TimelogController, type: :controller do
       describe '#invalid' do
         let(:work_package_id) { 'blub' }
 
-        before { post :create, params }
+        before do post :create, params end
 
         it { expect(response).to render_template(:edit) }
 

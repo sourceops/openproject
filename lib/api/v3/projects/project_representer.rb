@@ -34,12 +34,11 @@ module API
   module V3
     module Projects
       class ProjectRepresenter < ::API::Decorators::Single
-
         self_link
 
         link :createWorkPackage do
           {
-            href: api_v3_paths.create_work_package_form(represented.id),
+            href: api_v3_paths.create_project_work_package_form(represented.id),
             method: :post
           } if current_user_allowed_to(:add_work_packages, context: represented)
         end
@@ -64,7 +63,6 @@ module API
 
         property :name,         render_nil: true
         property :description,  render_nil: true
-        property :homepage
 
         property :created_on,
                  as: 'createdAt',
@@ -80,6 +78,9 @@ module API
         def _type
           'Project'
         end
+
+        self.to_eager_load = [:project_type]
+        self.checked_permissions = [:add_work_packages]
       end
     end
   end

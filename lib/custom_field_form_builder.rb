@@ -30,7 +30,7 @@
 require 'action_view/helpers/form_helper'
 
 class CustomFieldFormBuilder < TabularFormBuilder
-
+  include ActionView::Context
   # Return custom field html tag corresponding to its format
   def custom_field(options = {})
     input = custom_field_input(options)
@@ -90,25 +90,32 @@ class CustomFieldFormBuilder < TabularFormBuilder
   end
 
   def custom_field_field_name
-    "#{object_name}[#{ object.custom_field.id }]"
+    "#{object_name}[#{object.custom_field.id}]"
   end
 
   def custom_field_field_id
-    "#{object_name}#{ object.custom_field.id }".gsub(/[\[\]]+/, '_')
+    "#{object_name}#{object.custom_field.id}".gsub(/[\[\]]+/, '_')
   end
 
   # Return custom field label tag
   def custom_field_label_tag
     custom_value = object
+    is_required = object.custom_field.is_required?
 
     classes = 'form--label'
     classes << ' error' unless custom_value.errors.empty?
+    classes << ' -required'if is_required
 
     content_tag 'label',
-                custom_value.custom_field.name,
                 for: custom_field_field_id,
                 class: classes,
                 title: custom_value.custom_field.name,
-                lang: custom_value.custom_field.name_locale
+                lang: custom_value.custom_field.name_locale do
+                  content_tag('span', custom_value.custom_field.name) +
+                  (content_tag('span',
+                             '*',
+                             class: 'form--label-required',
+                             :'aria-hidden' => true) if is_required)
+    end
   end
 end

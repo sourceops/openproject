@@ -28,28 +28,26 @@
 #++
 
 class Query < ActiveRecord::Base
-  include ActiveModel::ForbiddenAttributesProtection
   include Queries::WorkPackages::AvailableFilterOptions
 
-  alias_method :available_filters, :available_work_package_filters # referenced in plugin patches - currently there are only work package queries and filters
+  # referenced in plugin patches - currently there are only work package queries and filters
+  alias_method :available_filters, :available_work_package_filters
 
   @@user_filters = %w{assigned_to_id author_id watcher_id responsible_id}.freeze
 
   belongs_to :project
   belongs_to :user
-  has_one :query_menu_item, class_name: 'MenuItems::QueryMenuItem', dependent: :delete, order: 'name', foreign_key: 'navigatable_id'
+  has_one :query_menu_item, -> { order('name') },
+          class_name: 'MenuItems::QueryMenuItem',
+          dependent: :delete, foreign_key: 'navigatable_id'
   serialize :filters, Queries::WorkPackages::FilterSerializer
   serialize :column_names
   serialize :sort_criteria, Array
-
-  attr_protected :project_id # , :user_id
 
   validates :name, presence: true
   validates_length_of :name, maximum: 255
 
   validate :validate_work_package_filters
-
-  after_initialize :remember_project_scope
 
   # WARNING: sortable should not contain a column called id (except for the
   # work_packages.id column). Otherwise naming collisions can happen when AR
@@ -59,33 +57,81 @@ class Query < ActiveRecord::Base
   # query.  If such a statement selects from two coluns named <table name>.id
   # the second one is taken to get the ids of the work packages.
   @@available_columns = [
-    QueryColumn.new(:id, sortable: "#{WorkPackage.table_name}.id", groupable: false),
-    QueryColumn.new(:project, sortable: "#{Project.table_name}.name", groupable: true),
-    QueryColumn.new(:type, sortable: "#{Type.table_name}.position", groupable: true),
-    QueryColumn.new(:parent, sortable: ["#{WorkPackage.table_name}.root_id", "#{WorkPackage.table_name}.lft ASC"], default_order: 'desc'),
-    QueryColumn.new(:status, sortable: "#{Status.table_name}.position", groupable: true),
-    QueryColumn.new(:priority, sortable: "#{IssuePriority.table_name}.position", default_order: 'desc', groupable: true),
-    QueryColumn.new(:subject, sortable: "#{WorkPackage.table_name}.subject"),
-    QueryColumn.new(:author),
-    QueryColumn.new(:assigned_to, sortable: ["#{User.table_name}.lastname",
-                                             "#{User.table_name}.firstname",
-                                             "#{WorkPackage.table_name}.assigned_to_id"],
-                                  groupable: true),
-    QueryColumn.new(:responsible, sortable: ["#{User.table_name}.lastname",
-                                             "#{User.table_name}.firstname",
-                                             "#{WorkPackage.table_name}.responsible_id"],
-                                  groupable: "#{WorkPackage.table_name}.responsible_id",
-                                  join: 'LEFT OUTER JOIN users as responsible ON ' +
-                                        "(#{WorkPackage.table_name}.responsible_id = responsible.id)"),
-    QueryColumn.new(:updated_at, sortable: "#{WorkPackage.table_name}.updated_at", default_order: 'desc'),
-    QueryColumn.new(:category, sortable: "#{Category.table_name}.name", groupable: true),
-    QueryColumn.new(:fixed_version, sortable: ["#{Version.table_name}.effective_date", "#{Version.table_name}.name"], default_order: 'desc', groupable: true),
-    # Put empty start_dates and due_dates in the far future rather than in the far past
-    QueryColumn.new(:start_date, sortable: ["CASE WHEN #{WorkPackage.table_name}.start_date IS NULL THEN 1 ELSE 0 END", "#{WorkPackage.table_name}.start_date"]),
-    QueryColumn.new(:due_date, sortable: ["CASE WHEN #{WorkPackage.table_name}.due_date IS NULL THEN 1 ELSE 0 END", "#{WorkPackage.table_name}.due_date"]),
-    QueryColumn.new(:estimated_hours, sortable: "#{WorkPackage.table_name}.estimated_hours"),
-    QueryColumn.new(:done_ratio, sortable: "#{WorkPackage.table_name}.done_ratio", groupable: true),
-    QueryColumn.new(:created_at, sortable: "#{WorkPackage.table_name}.created_at", default_order: 'desc'),
+    QueryColumn.new(:id,
+                    sortable: "#{WorkPackage.table_name}.id",
+                    groupable: false),
+    QueryColumn.new(:project,
+                    sortable: "#{Project.table_name}.name",
+                    groupable: true),
+    QueryColumn.new(:subject,
+                    sortable: "#{WorkPackage.table_name}.subject"),
+    QueryColumn.new(:type,
+                    sortable: "#{::Type.table_name}.position",
+                    groupable: true),
+    QueryColumn.new(:parent,
+                    sortable: ["#{WorkPackage.table_name}.root_id",
+                               "#{WorkPackage.table_name}.lft ASC"],
+                    default_order: 'desc'),
+    QueryColumn.new(:status,
+                    sortable: "#{Status.table_name}.position",
+                    groupable: true),
+    QueryColumn.new(:priority,
+                    sortable: "#{IssuePriority.table_name}.position",
+                    default_order: 'desc',
+                    groupable: true),
+    QueryColumn.new(:author,
+                    sortable: ["#{User.table_name}.lastname",
+                               "#{User.table_name}.firstname",
+                               "#{WorkPackage.table_name}.author_id"],
+                    groupable: true),
+    QueryColumn.new(:assigned_to,
+                    sortable: ["#{User.table_name}.lastname",
+                               "#{User.table_name}.firstname",
+                               "#{WorkPackage.table_name}.assigned_to_id"],
+                    groupable: true),
+    QueryColumn.new(:responsible,
+                    sortable: ["#{User.table_name}.lastname",
+                               "#{User.table_name}.firstname",
+                               "#{WorkPackage.table_name}.responsible_id"],
+                    groupable: true,
+                    join: 'LEFT OUTER JOIN users as responsible ON ' +
+                          "(#{WorkPackage.table_name}.responsible_id = responsible.id)"),
+    QueryColumn.new(:updated_at,
+                    sortable: "#{WorkPackage.table_name}.updated_at",
+                    default_order: 'desc'),
+    QueryColumn.new(:category,
+                    sortable: "#{Category.table_name}.name",
+                    groupable: true),
+    QueryColumn.new(:fixed_version,
+                    sortable: ["#{Version.table_name}.effective_date",
+                               "#{Version.table_name}.name"],
+                    default_order: 'desc',
+                    groupable: true),
+    # Put empty start_dates in the far future rather than in the far past
+    QueryColumn.new(:start_date,
+                    # Put empty start_dates in the far future rather than in the far past
+                    sortable: ["CASE WHEN #{WorkPackage.table_name}.start_date IS NULL
+                                THEN 1
+                                ELSE 0 END",
+                               "#{WorkPackage.table_name}.start_date"]),
+    QueryColumn.new(:due_date,
+                    # Put empty due_dates in the far future rather than in the far past
+                    sortable: ["CASE WHEN #{WorkPackage.table_name}.due_date IS NULL
+                                THEN 1
+                                ELSE 0 END",
+                               "#{WorkPackage.table_name}.due_date"]),
+    QueryColumn.new(:estimated_hours,
+                    sortable: "#{WorkPackage.table_name}.estimated_hours",
+                    summable: true),
+    QueryColumn.new(:spent_hours,
+                    sortable: false,
+                    summable: false),
+    QueryColumn.new(:done_ratio,
+                    sortable: "#{WorkPackage.table_name}.done_ratio",
+                    groupable: true),
+    QueryColumn.new(:created_at,
+                    sortable: "#{WorkPackage.table_name}.created_at",
+                    default_order: 'desc'),
   ]
   cattr_reader :available_columns
 
@@ -96,11 +142,6 @@ class Query < ActiveRecord::Base
 
   def add_default_filter
     self.filters = [Queries::WorkPackages::Filter.new('status_id', operator: 'o', values: [''])] if filters.blank?
-  end
-
-  # Store the fact that project is nil (used in #editable_by?)
-  def remember_project_scope
-    @is_for_all = project.nil?
   end
 
   def validate_work_package_filters
@@ -125,7 +166,7 @@ class Query < ActiveRecord::Base
     # Admin can edit them all and regular users can edit their private queries
     return true if user.admin? || (!is_public && user_id == user.id)
     # Members can not edit public queries that are for all project (only admin is allowed to)
-    is_public && !@is_for_all && user.allowed_to?(:manage_public_queries, project)
+    is_public && !for_all? && user.allowed_to?(:manage_public_queries, project)
   end
 
   def add_filter(field, operator, values)
@@ -188,14 +229,15 @@ class Query < ActiveRecord::Base
   def available_columns
     return @available_columns if @available_columns
     @available_columns = ::Query.available_columns
-    @available_columns += (project ?
-                            project.all_work_package_custom_fields :
-                            WorkPackageCustomField.find(:all)
-                           ).map { |cf| ::QueryCustomFieldColumn.new(cf) }
-    if WorkPackage.done_ratio_disabled?
-      @available_columns.select! { |column| column.name != :done_ratio }.length
-    end
-    @available_columns
+    @available_columns += if project
+                            project.all_work_package_custom_fields
+                          else
+                            WorkPackageCustomField.all
+                          end.map { |cf| ::QueryCustomFieldColumn.new(cf) }
+
+    # have to use this instead of
+    # #select! as #select! can return nil
+    @available_columns = @available_columns.select(&:available?)
   end
 
   def self.available_columns=(v)
@@ -252,6 +294,18 @@ class Query < ActiveRecord::Base
     column_names.nil? || column_names.empty?
   end
 
+  ##
+  # Returns the columns involved in this query, including those only needed for sorting or grouping
+  # puposes, not only the ones displayed (see :columns).
+  def involved_columns
+    columns = self.columns.map(&:name)
+
+    columns << group_by.to_sym if group_by
+    columns += sort_criteria.map { |x| x.first.to_sym }
+
+    columns.uniq
+  end
+
   def sort_criteria=(arg)
     c = []
     if arg.is_a?(Hash)
@@ -265,6 +319,13 @@ class Query < ActiveRecord::Base
     read_attribute(:sort_criteria) || []
   end
 
+  def sort_criteria_sql
+    criteria = SortHelper::SortCriteria.new
+    criteria.available_criteria = sortable_columns
+    criteria.criteria = sort_criteria
+    criteria.to_sql
+  end
+
   def sort_criteria_key(arg)
     sort_criteria && sort_criteria[arg] && sort_criteria[arg].first
   end
@@ -276,9 +337,7 @@ class Query < ActiveRecord::Base
   # Returns the SQL sort order that should be prepended for grouping
   def group_by_sort_order
     if grouped? && (column = group_by_column)
-      column.sortable.is_a?(Array) ?
-        column.sortable.map { |s| "#{s} #{column.default_order}" }.join(',') :
-        "#{column.sortable} #{column.default_order}"
+      Array(column.sortable).map { |s| "#{s} #{column.default_order}" }.join(',')
     end
   end
 
@@ -305,9 +364,9 @@ class Query < ActiveRecord::Base
 
   def project_statement
     project_clauses = []
+    subproject_filter = filter_for 'subproject_id'
     if project && !project.descendants.active.empty?
       ids = [project.id]
-      subproject_filter = filter_for 'subproject_id'
       if subproject_filter
         case subproject_filter.operator
         when '='
@@ -317,16 +376,18 @@ class Query < ActiveRecord::Base
           # main project only
         else
           # all subprojects
-          ids += project.descendants.map(&:id)
+          ids += project.descendants.pluck(:id)
         end
       elsif Setting.display_subprojects_work_packages?
-        ids += project.descendants.map(&:id)
+        ids += project.descendants.pluck(:id)
       end
       project_clauses << "#{Project.table_name}.id IN (%s)" % ids.join(',')
     elsif project
       project_clauses << "#{Project.table_name}.id = %d" % project.id
     end
-    project_clauses <<  WorkPackage.visible_condition(User.current)
+    project_clauses << WorkPackage.visible_condition(User.current,
+                                                     project: project,
+                                                     with_subprojects: !subproject_filter.nil?)
     project_clauses.join(' AND ')
   end
 
@@ -386,7 +447,7 @@ class Query < ActiveRecord::Base
           groups = Group.all
           operator = '!' # Override the operator since we want to find by assigned_to
         else
-          groups = Group.find_all_by_id(values)
+          groups = Group.where(id: values)
         end
         groups ||= []
         members_of_groups = groups.inject([]) {|user_ids, group|
@@ -405,7 +466,7 @@ class Query < ActiveRecord::Base
         elsif operator == '!*' # No role
           operator = '!' # Override the operator since we want to find by assigned_to
         else
-          roles = roles.find_all_by_id(values)
+          roles = roles.where(id: values)
         end
         roles ||= []
 
@@ -428,7 +489,6 @@ class Query < ActiveRecord::Base
         sql << '(' + sql_for_field(field, operator, values, db_table, db_field) + ')'
       end
       filters_clauses << sql
-
     end if filters.present? and valid?
 
     (filters_clauses << project_statement).join(' AND ')
@@ -454,8 +514,9 @@ class Query < ActiveRecord::Base
             .order(options[:order])
             .limit(options[:limit])
             .offset(options[:offset])
+            .references(:users)
 
-    query.find :all
+    query
   rescue ::ActiveRecord::StatementInvalid => e
     raise ::Query::StatementInvalid.new(e.message)
   end
@@ -473,24 +534,27 @@ class Query < ActiveRecord::Base
     matchdata.nil? ? nil : matchdata[:id]
   end
 
-  # Helper method to generate the WHERE sql for a +field+, +operator+ and a +value+
-  def sql_for_field(field, operator, value, db_table, db_field, is_custom_filter = false)
+  # Helper method to generate the WHERE sql for a +field+, +operator+ and a +values+ array
+  def sql_for_field(field, operator, values, db_table, db_field, is_custom_filter = false)
+    # code expects strings (e.g. for quoting), but ints would work as well: unify them here
+    values = values.map(&:to_s)
+
     sql = ''
     case operator
     when '='
-      if value.present?
-        if value.include?('-1')
+      if values.present?
+        if values.include?('-1')
           sql = "#{db_table}.#{db_field} IS NULL OR "
         end
 
-        sql += "#{db_table}.#{db_field} IN (" + value.map { |val| "'#{connection.quote_string(val)}'" }.join(',') + ')'
+        sql += "#{db_table}.#{db_field} IN (" + values.map { |val| "'#{connection.quote_string(val)}'" }.join(',') + ')'
       else
         # empty set of allowed values produces no result
         sql = '0=1'
       end
     when '!'
-      if value.present?
-        sql = "(#{db_table}.#{db_field} IS NULL OR #{db_table}.#{db_field} NOT IN (" + value.map { |val| "'#{connection.quote_string(val)}'" }.join(',') + '))'
+      if values.present?
+        sql = "(#{db_table}.#{db_field} IS NULL OR #{db_table}.#{db_field} NOT IN (" + values.map { |val| "'#{connection.quote_string(val)}'" }.join(',') + '))'
       else
         # empty set of forbidden values allows all results
         sql = '1=1'
@@ -503,32 +567,32 @@ class Query < ActiveRecord::Base
       sql << " AND #{db_table}.#{db_field} <> ''" if is_custom_filter
     when '>='
       if is_custom_filter
-        sql = "#{db_table}.#{db_field} != '' AND CAST(#{db_table}.#{db_field} AS decimal(60,4)) >= #{value.first.to_f}"
+        sql = "#{db_table}.#{db_field} != '' AND CAST(#{db_table}.#{db_field} AS decimal(60,4)) >= #{values.first.to_f}"
       else
-        sql = "#{db_table}.#{db_field} >= #{value.first.to_f}"
+        sql = "#{db_table}.#{db_field} >= #{values.first.to_f}"
       end
     when '<='
       if is_custom_filter
-        sql = "#{db_table}.#{db_field} != '' AND CAST(#{db_table}.#{db_field} AS decimal(60,4)) <= #{value.first.to_f}"
+        sql = "#{db_table}.#{db_field} != '' AND CAST(#{db_table}.#{db_field} AS decimal(60,4)) <= #{values.first.to_f}"
       else
-        sql = "#{db_table}.#{db_field} <= #{value.first.to_f}"
+        sql = "#{db_table}.#{db_field} <= #{values.first.to_f}"
       end
     when 'o'
       sql = "#{Status.table_name}.is_closed=#{connection.quoted_false}" if field == 'status_id'
     when 'c'
       sql = "#{Status.table_name}.is_closed=#{connection.quoted_true}" if field == 'status_id'
     when '>t-'
-      sql = date_range_clause(db_table, db_field, - value.first.to_i, 0)
+      sql = date_range_clause(db_table, db_field, - values.first.to_i, 0)
     when '<t-'
-      sql = date_range_clause(db_table, db_field, nil, - value.first.to_i)
+      sql = date_range_clause(db_table, db_field, nil, - values.first.to_i)
     when 't-'
-      sql = date_range_clause(db_table, db_field, - value.first.to_i, - value.first.to_i)
+      sql = date_range_clause(db_table, db_field, - values.first.to_i, - values.first.to_i)
     when '>t+'
-      sql = date_range_clause(db_table, db_field, value.first.to_i, nil)
+      sql = date_range_clause(db_table, db_field, values.first.to_i, nil)
     when '<t+'
-      sql = date_range_clause(db_table, db_field, 0, value.first.to_i)
+      sql = date_range_clause(db_table, db_field, 0, values.first.to_i)
     when 't+'
-      sql = date_range_clause(db_table, db_field, value.first.to_i, value.first.to_i)
+      sql = date_range_clause(db_table, db_field, values.first.to_i, values.first.to_i)
     when 't'
       sql = date_range_clause(db_table, db_field, 0, 0)
     when 'w'
@@ -539,9 +603,9 @@ class Query < ActiveRecord::Base
         Time.now.at_beginning_of_week
       sql = "#{db_table}.#{db_field} BETWEEN '%s' AND '%s'" % [connection.quoted_date(from), connection.quoted_date(from + 7.days)]
     when '~'
-      sql = "LOWER(#{db_table}.#{db_field}) LIKE '%#{connection.quote_string(value.first.to_s.downcase)}%'"
+      sql = "LOWER(#{db_table}.#{db_field}) LIKE '%#{connection.quote_string(values.first.to_s.downcase)}%'"
     when '!~'
-      sql = "LOWER(#{db_table}.#{db_field}) NOT LIKE '%#{connection.quote_string(value.first.to_s.downcase)}%'"
+      sql = "LOWER(#{db_table}.#{db_field}) NOT LIKE '%#{connection.quote_string(values.first.to_s.downcase)}%'"
     end
 
     sql
@@ -557,5 +621,13 @@ class Query < ActiveRecord::Base
       s << ("#{table}.#{field} <= '%s'" % [connection.quoted_date((Date.today + to).to_time.end_of_day)])
     end
     s.join(' AND ')
+  end
+
+  def connection
+    self.class.connection
+  end
+
+  def for_all?
+    @for_all ||= project.nil?
   end
 end

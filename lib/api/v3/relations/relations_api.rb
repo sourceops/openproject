@@ -33,6 +33,17 @@ module API
     module Relations
       class RelationsAPI < ::API::OpenProjectAPI
         resources :relations do
+          get do
+            relations = @work_package.relations.select { |relation|
+              relation.other_work_package(@work_package).visible?
+            }
+
+            RelationCollectionRepresenter.new(relations,
+                                              api_v3_paths.work_package_relations(@work_package.id),
+                                              work_package: @work_package,
+                                              current_user: current_user)
+          end
+
           params do
             optional :to_id, desc: 'Id of related work package'
             optional :relation_type, desc: 'Type of relationship'
@@ -43,13 +54,15 @@ module API
             declared_params = declared(params).reject { |key, value| key.to_sym == :id || value.nil? }
 
             relation = @work_package.new_relation.tap do |r|
-              r.to = WorkPackage.visible.find_by_id(declared_params[:to_id].match(/\d+/).to_s)
+              r.to = WorkPackage.visible.find_by(id: declared_params[:to_id].match(/\d+/).to_s)
               r.relation_type = declared_params[:relation_type]
               r.delay = declared_params[:delay_id]
             end
 
             if relation.valid? && relation.save
-              representer = RelationRepresenter.new(relation, work_package: relation.to)
+              representer = RelationRepresenter.new(relation,
+                                                    work_package: relation.to,
+                                                    current_user: current_user)
               representer
             else
               fail ::API::Errors::Validation.new(nil, I18n.t('api_v3.errors.invalid_relation'))

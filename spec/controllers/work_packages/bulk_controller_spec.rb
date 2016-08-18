@@ -38,10 +38,11 @@ describe WorkPackages::BulkController, type: :controller do
                        is_for_all: true)
   }
   let(:custom_field_2) { FactoryGirl.create(:work_package_custom_field) }
+  let(:custom_field_user) { FactoryGirl.create(:user_issue_custom_field) }
   let(:status) { FactoryGirl.create(:status) }
   let(:type) {
     FactoryGirl.create(:type_standard,
-                       custom_fields: [custom_field_1, custom_field_2])
+                       custom_fields: [custom_field_1, custom_field_2, custom_field_user])
   }
   let(:project_1) {
     FactoryGirl.create(:project,
@@ -125,7 +126,7 @@ describe WorkPackages::BulkController, type: :controller do
     end
 
     context 'same project' do
-      before { get :edit, ids: [work_package_1.id, work_package_2.id] }
+      before do get :edit, ids: [work_package_1.id, work_package_2.id] end
 
       it_behaves_like :response
 
@@ -135,16 +136,20 @@ describe WorkPackages::BulkController, type: :controller do
         subject { response }
 
         describe '#parent' do
-          it { assert_tag :input, attributes: { name: 'work_package[parent_id]' } }
+          it { assert_select 'input', attributes: { name: 'work_package[parent_id]' } }
         end
 
         context 'custom_field' do
           describe '#type' do
-            it { assert_tag :input, attributes: { name: "work_package[custom_field_values][#{custom_field_1.id}]" } }
+            it { assert_select 'input', attributes: { name: "work_package[custom_field_values][#{custom_field_1.id}]" } }
           end
 
           describe '#project' do
-            it { assert_tag :select, attributes: { name: "work_package[custom_field_values][#{custom_field_2.id}]" } }
+            it { assert_select 'select', attributes: { name: "work_package[custom_field_values][#{custom_field_2.id}]" } }
+          end
+
+          describe '#user' do
+            it { assert_select 'select', attributes: { name: "work_package[custom_field_values][#{custom_field_user.id}]" } }
           end
         end
       end
@@ -165,16 +170,16 @@ describe WorkPackages::BulkController, type: :controller do
         subject { response }
 
         describe '#parent' do
-          it { assert_no_tag :input, attributes: { name: 'work_package[parent_id]' } }
+          it { assert_select 'input', {attributes: { name: 'work_package[parent_id]' }}, false }
         end
 
         context 'custom_field' do
           describe '#type' do
-            it { assert_tag :input, attributes: { name: "work_package[custom_field_values][#{custom_field_1.id}]" } }
+            it { assert_select 'input', attributes: { name: "work_package[custom_field_values][#{custom_field_1.id}]" } }
           end
 
           describe '#project' do
-            it { assert_no_tag :select, attributes: { name: "work_package[custom_field_values][#{custom_field_2.id}]" } }
+            it { assert_select 'select', {attributes: { name: "work_package[custom_field_values][#{custom_field_2.id}]" }}, false }
           end
         end
       end
@@ -183,7 +188,7 @@ describe WorkPackages::BulkController, type: :controller do
 
   describe '#update' do
     let(:work_package_ids) { [work_package_1.id, work_package_2.id] }
-    let(:work_packages) { WorkPackage.find_all_by_id(work_package_ids) }
+    let(:work_packages) { WorkPackage.where(id: work_package_ids) }
     let(:priority) { FactoryGirl.create(:priority_immediate) }
     let(:group_id) { '' }
     let(:responsible_id) { '' }
@@ -192,7 +197,7 @@ describe WorkPackages::BulkController, type: :controller do
       context 'in host' do
         let(:url) { '/work_packages' }
 
-        before { put :update, ids: work_package_ids, back_url: url }
+        before do put :update, ids: work_package_ids, back_url: url end
 
         subject { response }
 
@@ -204,7 +209,7 @@ describe WorkPackages::BulkController, type: :controller do
       context 'of host' do
         let(:url) { 'http://google.com' }
 
-        before { put :update, ids: work_package_ids, back_url: url }
+        before do put :update, ids: work_package_ids, back_url: url end
 
         subject { response }
 
@@ -285,7 +290,7 @@ describe WorkPackages::BulkController, type: :controller do
 
       shared_examples_for 'updated work package' do
         describe '#priority' do
-          subject { WorkPackage.find_all_by_priority_id(priority.id).map(&:id) }
+          subject { WorkPackage.where(priority_id: priority.id).map(&:id) }
 
           it { is_expected.to match_array(work_package_ids) }
         end
@@ -294,7 +299,7 @@ describe WorkPackages::BulkController, type: :controller do
           let(:result) { [custom_field_value] }
 
           subject {
-            WorkPackage.find_all_by_id(work_package_ids)
+            WorkPackage.where(id: work_package_ids)
               .map { |w| w.custom_value_for(custom_field_1.id).value }
               .uniq
           }
@@ -307,7 +312,7 @@ describe WorkPackages::BulkController, type: :controller do
             let(:result) { ['Bulk editing'] }
 
             subject {
-              WorkPackage.find_all_by_id(work_package_ids)
+              WorkPackage.where(id: work_package_ids)
                 .map { |w| w.last_journal.notes }
                 .uniq
             }
@@ -319,7 +324,7 @@ describe WorkPackages::BulkController, type: :controller do
             let(:result) { [1] }
 
             subject {
-              WorkPackage.find_all_by_id(work_package_ids)
+              WorkPackage.where(id: work_package_ids)
                 .map { |w| w.last_journal.details.size }
                 .uniq
             }
@@ -343,7 +348,7 @@ describe WorkPackages::BulkController, type: :controller do
         let(:work_package_ids) { [work_package_1.id, work_package_2.id, work_package_3.id] }
 
         context 'with permission' do
-          before { member1_p2 }
+          before do member1_p2 end
 
           include_context 'update_request'
 

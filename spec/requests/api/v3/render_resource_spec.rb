@@ -42,7 +42,7 @@ describe 'API v3 Render resource' do
   let(:context) { nil }
 
   before(:each) do
-    allow(User).to receive(:current).and_return(user)
+    login_as(user)
     post path, params, 'CONTENT_TYPE' => content_type
   end
 
@@ -51,7 +51,7 @@ describe 'API v3 Render resource' do
 
     it { expect(subject.content_type).to eq('text/html') }
 
-    it { expect(subject.body).to eq(text) }
+    it { expect(subject.body).to be_html_eql(text) }
   end
 
   describe 'textile' do
@@ -71,8 +71,8 @@ describe 'API v3 Render resource' do
             it_behaves_like 'valid response' do
               let(:text) do
                 '<p>Hello World! This <strong>is</strong> textile with a ' +
-                '<a href="http://community.openproject.org" class="external">link</a> ' +
-                'and ümläutß.</p>'
+                  '<a href="http://community.openproject.org" class="external">link</a> ' +
+                  'and ümläutß.</p>'
               end
             end
           end
@@ -83,8 +83,9 @@ describe 'API v3 Render resource' do
             let(:href) { "/work_packages/#{id}" }
             let(:title) { "#{work_package.subject} (#{work_package.status})" }
             let(:text) {
-              "<p>Hello World! Have a look at <a href=\"#{href}\" "\
+              '<p>Hello World! Have a look at <a '\
                   "class=\"issue work_package status-1 priority-1\" "\
+                  "href=\"#{href}\" "\
                   "title=\"#{title}\">##{id}</a></p>"
             }
 

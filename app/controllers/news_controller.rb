@@ -50,14 +50,23 @@ class NewsController < ApplicationController
              .per_page(per_page_param)
 
     respond_to do |format|
-      format.html { render layout: !request.xhr? }
-      format.atom { render_feed(@newss, title: (@project ? @project.name : Setting.app_title) + ": #{l(:label_news_plural)}") }
+      format.html do
+        render layout: !request.xhr?
+      end
+      format.atom do
+        render_feed(@newss,
+                    title: (@project ? @project.name : Setting.app_title) + ": #{l(:label_news_plural)}")
+      end
     end
+  end
+
+  current_menu_item :index do
+    :news
   end
 
   def show
     @comments = @news.comments
-    @comments.reverse! if User.current.wants_comments_in_reverse_order?
+    @comments.reverse_order if User.current.wants_comments_in_reverse_order?
   end
 
   def new
@@ -66,7 +75,7 @@ class NewsController < ApplicationController
 
   def create
     @news = News.new(project: @project, author: User.current)
-    @news.safe_attributes = params[:news]
+    @news.attributes = permitted_params.news
     if @news.save
       flash[:notice] = l(:notice_successful_create)
       redirect_to controller: '/news', action: 'index', project_id: @project
@@ -79,7 +88,7 @@ class NewsController < ApplicationController
   end
 
   def update
-    @news.safe_attributes = params[:news]
+    @news.attributes = permitted_params.news
     if @news.save
       flash[:notice] = l(:notice_successful_update)
       redirect_to action: 'show', id: @news
@@ -90,6 +99,7 @@ class NewsController < ApplicationController
 
   def destroy
     @news.destroy
+    flash[:notice] = l(:notice_successful_delete)
     redirect_to action: 'index', project_id: @project
   end
 

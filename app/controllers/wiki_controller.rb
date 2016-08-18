@@ -83,7 +83,7 @@ class WikiController < ApplicationController
 
   # List of pages, sorted alphabetically and by parent (hierarchy)
   def index
-    @related_page = WikiPage.find_by_wiki_id_and_title(@wiki.id, params[:id])
+    @related_page = WikiPage.find_by(wiki_id: @wiki.id, title: wiki_page_title)
 
     load_pages_for_index
     @pages_by_parent_id = @pages.group_by(&:parent_id)
@@ -134,8 +134,7 @@ class WikiController < ApplicationController
     # THIS HACK NEEDS TO BE REPLACED BY AN ENGINEERS SOLUTION!
     @no_clearfix = true
 
-    page_title = params[:id]
-    @page = @wiki.find_or_new_page(page_title)
+    @page = @wiki.find_or_new_page(wiki_page_title)
     if @page.new_record?
       if User.current.allowed_to?(:edit_wiki_pages, @project) && editable?
         edit
@@ -166,7 +165,7 @@ class WikiController < ApplicationController
 
   # edit an existing page or a new one
   def edit
-    @page = @wiki.find_or_new_page(params[:id])
+    @page = @wiki.find_or_new_page(wiki_page_title)
     return render_403 unless editable?
     @page.content = WikiContent.new(page: @page) if @page.new_record?
 
@@ -182,8 +181,12 @@ class WikiController < ApplicationController
   verify method: :put, only: :update, render: { nothing: true, status: :method_not_allowed }
   # Creates a new page or updates an existing one
   def update
-    @page = @wiki.find_or_new_page(params[:id])
-    return render_403 unless editable?
+    @page = @wiki.find_or_new_page(wiki_page_title)
+    unless editable?
+      flash[:error] = l(:error_unable_update_wiki)
+      return render_403
+    end
+
     @page.content = WikiContent.new(page: @page) if @page.new_record?
 
     @content = @page.content_for_version(params[:version])
@@ -206,6 +209,7 @@ class WikiController < ApplicationController
       attachments = Attachment.attach_files(@page, params[:attachments])
       render_attachment_warning_if_needed(@page)
       call_hook(:controller_wiki_edit_after_save,  params: params, page: @page)
+      flash[:notice] = l(:notice_successful_update)
       redirect_to_show
     else
       render action: 'edit'
@@ -222,8 +226,8 @@ class WikiController < ApplicationController
     return render_403 unless editable?
     @page.redirect_existing_links = true
     # used to display the *original* title if some AR validation errors occur
-    @original_title = @page.pretty_title
-    if request.put? && @page.update_attributes(permitted_params.wiki_page_rename)
+    @original_title = @page.title
+    if request.patch? && @page.update_attributes(permitted_params.wiki_page_rename)
       flash[:notice] = l(:notice_successful_update)
       redirect_to_show
     end
@@ -231,7 +235,7 @@ class WikiController < ApplicationController
 
   def edit_parent_page
     return render_403 unless editable?
-    @parent_pages = @wiki.pages.all(include: :parent) - @page.self_and_descendants
+    @parent_pages = @wiki.pages.includes(:parent) - @page.self_and_descendants
   end
 
   def update_parent_page
@@ -241,7 +245,7 @@ class WikiController < ApplicationController
       flash[:notice] = l(:notice_successful_update)
       redirect_to_show
     else
-      @parent_pages = @wiki.pages.all(include: :parent) - @page.self_and_descendants
+      @parent_pages = @wiki.pages.includes(:parent) - @page.self_and_descendants
       render 'edit_parent_page'
     end
   end
@@ -279,7 +283,10 @@ class WikiController < ApplicationController
   # Removes a wiki page and its history
   # Children can be either set as root pages, removed or reassigned to another parent page
   def destroy
-    return render_403 unless editable?
+    unless editable?
+      flash[:error] = l(:error_unable_delete_wiki)
+      return render_403
+    end
 
     @descendants_count = @page.descendants.size
     if @descendants_count > 0
@@ -291,7 +298,7 @@ class WikiController < ApplicationController
         @page.descendants.each(&:destroy)
       when 'reassign'
         # Reassign children to another parent page
-        reassign_to = @wiki.pages.find_by_id(params[:reassign_to_id].to_i)
+        reassign_to = @wiki.pages.find_by(id: params[:reassign_to_id].to_i)
         return unless reassign_to
         @page.children.each do |child|
           child.update_attribute(:parent, reassign_to)
@@ -304,8 +311,10 @@ class WikiController < ApplicationController
     @page.destroy
 
     if page = @wiki.find_page(@wiki.start_page) || @wiki.pages.first
+      flash[:notice] = l(:notice_successful_delete)
       redirect_to action: 'index', project_id: @project, id: page
     else
+      flash[:notice] = l(:notice_successful_delete)
       redirect_to project_path(@project)
     end
   end
@@ -313,7 +322,7 @@ class WikiController < ApplicationController
   # Export wiki to a single html file
   def export
     if User.current.allowed_to?(:export_wiki_pages, @project)
-      @pages = @wiki.pages.find :all, order: 'title'
+      @pages = @wiki.pages.order('title')
       export = render_to_string action: 'export_multiple', layout: false
       send_data(export, type: 'text/html', filename: 'wiki.html')
     else
@@ -330,8 +339,8 @@ class WikiController < ApplicationController
 
   def list_attachments
     respond_to do |format|
-      format.json { render 'common/list_attachments', locals: { attachments: @page.attachments } }
-      format.html {}
+      format.json do render 'common/list_attachments', locals: { attachments: @page.attachments } end
+      format.html
     end
   end
 
@@ -346,7 +355,7 @@ class WikiController < ApplicationController
   protected
 
   def parse_preview_data
-    page = @wiki.find_page(params[:id])
+    page = @wiki.find_page(wiki_page_title)
     # page is nil when previewing a new page
     return render_403 unless page.nil? || editable?(page)
 
@@ -360,6 +369,10 @@ class WikiController < ApplicationController
 
   private
 
+  def wiki_page_title
+    params[:id]
+  end
+
   def find_wiki
     @project = Project.find(params[:project_id])
     @wiki = @project.wiki
@@ -370,12 +383,12 @@ class WikiController < ApplicationController
 
   # Finds the requested page and returns a 404 error if it doesn't exist
   def find_existing_page
-    @page = @wiki.find_page(params[:id])
+    @page = @wiki.find_page(wiki_page_title)
     render_404 if @page.nil?
   end
 
   def build_wiki_page_and_content
-    @page = WikiPage.new wiki: @wiki
+    @page = WikiPage.new wiki: @wiki, title: wiki_page_title.presence || I18n.t(:label_wiki_page)
     @page.content = WikiContent.new page: @page
 
     @content = @page.content_for_version nil
@@ -395,7 +408,7 @@ class WikiController < ApplicationController
   end
 
   def load_pages_for_index
-    @pages = @wiki.pages.with_updated_on.all(order: 'title', include: { wiki: :project })
+    @pages = @wiki.pages.with_updated_on.order('title').includes(wiki: :project)
   end
 
   def default_breadcrumb

@@ -42,25 +42,10 @@ describe WatchersController, type: :routing do
     end
 
     it 'should connect DELETE /:object_type/:id/unwatch to watchers#unwatch' do
-
       expect(delete("/#{type}/1/unwatch")).to route_to(controller: 'watchers',
                                                        action: 'unwatch',
                                                        object_type: type,
                                                        object_id: '1')
-    end
-
-    it 'should connect GET /:object_type/:id/watchers/new to watchers#new' do
-      expect(get("/#{type}/1/watchers/new")).to route_to(controller: 'watchers',
-                                                         action: 'new',
-                                                         object_type: type,
-                                                         object_id: '1')
-    end
-
-    it 'should connect POST /:object_type/:object_id/watchers to watchers#create' do
-      expect(post("/#{type}/1/watch")).to route_to(controller: 'watchers',
-                                                   action: 'watch',
-                                                   object_type: type,
-                                                   object_id: '1')
     end
   end
 
@@ -70,11 +55,5 @@ describe WatchersController, type: :routing do
 
       it_should_behave_like 'watched model routes'
     end
-  end
-
-  it 'should connect DELETE watchers/:id to watchers#destroy' do
-    expect(delete('/watchers/1')).to route_to(controller: 'watchers',
-                                              action: 'destroy',
-                                              id: '1')
   end
 end

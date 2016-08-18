@@ -30,14 +30,13 @@
 class Journal < ActiveRecord::Base
   self.table_name = 'journals'
 
+  include JournalChanges
   include JournalFormatter
   include FormatHooks
 
   register_journal_formatter :diff, OpenProject::JournalFormatter::Diff
   register_journal_formatter :attachment, OpenProject::JournalFormatter::Attachment
   register_journal_formatter :custom_field, OpenProject::JournalFormatter::CustomField
-
-  attr_accessible :journable_type, :journable_id, :activity_type, :version, :notes, :user_id
 
   # Make sure each journaled model instance only has unique version ids
   validates_uniqueness_of :version, scope: [:journable_id, :journable_type]
@@ -53,7 +52,28 @@ class Journal < ActiveRecord::Base
 
   # Scopes to all journals excluding the initial journal - useful for change
   # logs like the history on issue#show
-  scope 'changing', conditions: ['version > 1']
+  scope :changing, -> { where(['version > 1']) }
+
+  # Ensure that no INSERT/UPDATE/DELETE statements as well as other code inside :with_write_lock
+  # is run concurrently to the code inside this block, by using database locking.
+  # Note for PostgreSQL: If this is called from inside a transaction, the lock will last until the
+  #   end of that transaction.
+  # Note for MySQL: THis method does not currently change anything (no locking at all)
+  def self.with_write_lock
+    if OpenProject::Database.mysql?
+      Journal.transaction do
+        # MySQL is very weak when combining transactions and locks. Using an emulation layer to
+        # automatically release an advisory lock at the end of the transaction
+        TransactionalLock::AdvisoryLock.new('journals.write_lock').acquire
+        yield
+      end
+    else
+      Journal.transaction do
+        ActiveRecord::Base.connection.execute("LOCK TABLE #{table_name} IN SHARE ROW EXCLUSIVE MODE")
+        yield
+      end
+    end
+  end
 
   def changed_data=(changed_attributes)
     attributes = changed_attributes
@@ -88,8 +108,6 @@ class Journal < ActiveRecord::Base
       journable.project
     elsif journable.is_a? Project
       journable
-    else
-      nil
     end
   end
 
@@ -101,6 +119,7 @@ class Journal < ActiveRecord::Base
     get_changes
   end
 
+  # TODO Evaluate whether this can be removed without disturbing any migrations
   alias_method :changed_data, :details
 
   def new_value_for(prop)
@@ -112,7 +131,7 @@ class Journal < ActiveRecord::Base
   end
 
   def data
-    @data ||= "Journal::#{journable_type}Journal".constantize.find_by_journal_id(id)
+    @data ||= "Journal::#{journable_type}Journal".constantize.find_by(journal_id: id)
   end
 
   def data=(data)
@@ -132,59 +151,14 @@ class Journal < ActiveRecord::Base
 
   def touch_journable
     if journable && !journable.changed?
-      journable.touch
+      # Not using touch here on purpose,
+      # as to avoid changing lock versions on the journables for this change
+      time = journable.send(:current_time_from_proper_timezone)
+      attributes = journable.send(:timestamp_attributes_for_update_in_model)
+
+      timestamps = Hash[attributes.map { |column| [column, time] }]
+      journable.update_columns(timestamps) if timestamps.any?
     end
-  end
-
-  def get_changes
-    return {} if data.nil?
-
-    if @changes.nil?
-      @changes = HashWithIndifferentAccess.new
-
-      if predecessor.nil?
-        @changes = data.journaled_attributes.select { |_, v| !v.nil? }
-                   .inject({}) { |h, (k, v)| h[k] = [nil, v]; h }
-      else
-        normalized_data = JournalManager.normalize_newlines(data.journaled_attributes)
-        normalized_predecessor_data = JournalManager.normalize_newlines(predecessor.data.journaled_attributes)
-
-        normalized_data.select do |k, v|
-          # we dont record changes for changes from nil to empty strings and vice versa
-          pred = normalized_predecessor_data[k]
-          v != pred && (v.present? || pred.present?)
-        end.each do |k, v|
-          @changes[k] = [normalized_predecessor_data[k], v]
-        end
-      end
-
-      @changes.merge!(get_association_changes predecessor, 'attachable', 'attachments', :attachment_id, :filename)
-      @changes.merge!(get_association_changes predecessor, 'customizable', 'custom_fields', :custom_field_id, :value)
-    end
-
-    @changes
-  end
-
-  def get_association_changes(predecessor, journal_association, association, key, value)
-    changes = {}
-    journal_assoc_name = "#{journal_association}_journals"
-
-    if predecessor.nil?
-      send(journal_assoc_name).each_with_object(changes) { |a, h| h["#{association}_#{a.send(key)}"] = [nil, a.send(value)] }
-    else
-      current = send(journal_assoc_name).map(&:attributes)
-      predecessor_attachable_journals = predecessor.send(journal_assoc_name).map(&:attributes)
-
-      merged_journals = JournalManager.merge_reference_journals_by_id current,
-                                                                      predecessor_attachable_journals,
-                                                                      key.to_s
-
-      changes.merge! JournalManager.added_references(merged_journals, association, value.to_s)
-      changes.merge! JournalManager.removed_references(merged_journals, association, value.to_s)
-      changes.merge! JournalManager.changed_references(merged_journals, association, value.to_s)
-    end
-
-    changes
   end
 
   def predecessor

@@ -35,8 +35,11 @@ require 'roar/json/hal'
 module API
   module V3
     module Projects
-      class ProjectCollectionRepresenter < ::API::Decorators::Collection
+      class ProjectCollectionRepresenter < ::API::Decorators::UnpaginatedCollection
         element_decorator ::API::V3::Projects::ProjectRepresenter
+
+        self.to_eager_load = ::API::V3::Projects::ProjectRepresenter.to_eager_load
+        self.checked_permissions = ::API::V3::Projects::ProjectRepresenter.checked_permissions
       end
     end
   end

@@ -28,17 +28,30 @@
 #++
 
 class QueryColumn
-  attr_accessor :name, :sortable, :groupable, :join, :default_order
+  attr_accessor :name,
+                :sortable,
+                :groupable,
+                :summable,
+                :available,
+                :join,
+                :default_order
+  alias_method :summable?, :summable
   include Redmine::I18n
 
   def initialize(name, options = {})
     self.name = name
-    self.sortable = options[:sortable]
-    self.groupable = options[:groupable]
+
+    %i(sortable
+       groupable
+       summable
+       default_order).each do |attribute|
+      send("#{attribute}=", options[attribute])
+    end
+
+    self.available = options.fetch(:available, true)
 
     self.join = options.delete(:join)
 
-    self.default_order = options[:default_order]
     @caption_key = options[:caption] || name.to_s
   end
 
@@ -66,6 +79,28 @@ class QueryColumn
 
   def value(issue)
     issue.send name
+  end
+
+  def available?
+    available
+  end
+
+  def available
+    if name == :done_ratio
+      !WorkPackage.done_ratio_disabled?
+    else
+      @available
+    end
+  end
+
+  def sum_of(work_packages)
+    if work_packages.is_a?(Array)
+      # TODO: Sums::grouped_sums might call through here without an AR::Relation
+      # Ensure that this also calls using a Relation and drop this (slow!) implementation
+      work_packages.map { |wp| value(wp) }.compact.reduce(:+)
+    else
+      work_packages.sum(name)
+    end
   end
 
   protected

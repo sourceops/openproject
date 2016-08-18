@@ -66,6 +66,7 @@ module API
 
     use OpenProject::Authentication::Manager
 
+    helpers API::Caching::Helpers
     helpers do
       def current_user
         User.current
@@ -89,16 +90,26 @@ module API
         end
       end
 
+      def set_localization
+        SetLocalizationService.new(User.current, env['HTTP_ACCEPT_LANGUAGE']).call
+      end
+
       def logged_in?
         # An admin SystemUser is anonymous but still a valid user to be logged in.
         current_user && (current_user.admin? || !current_user.anonymous?)
       end
 
-      def authorize(permission, context: nil, global: false, user: current_user)
-        is_authorized = AuthorizationService.new(permission,
-                                                 context: context,
-                                                 global: global,
-                                                 user: user).call
+      def authorize(permission, context: nil, global: false, user: current_user, &block)
+        auth_service = AuthorizationService.new(permission,
+                                                context: context,
+                                                global: global,
+                                                user: user)
+
+        authorize_by_with_raise auth_service, &block
+      end
+
+      def authorize_by_with_raise(callable)
+        is_authorized = callable.call
 
         return true if is_authorized
 
@@ -109,14 +120,6 @@ module API
         end
 
         false
-      end
-
-      def authorize_by_with_raise(&_block)
-        if yield
-          true
-        else
-          raise API::Errors::Unauthorized
-        end
       end
 
       def running_in_test_env?
@@ -130,16 +133,15 @@ module API
         raise ArgumentError if projects.nil? && !global
         projects = Array(projects)
 
-        authorized = permissions.any? do |permission|
-          allowed_condition = Project.allowed_to_condition(user, permission)
-          allowed_projects = Project.where(allowed_condition)
+        authorized = permissions.any? { |permission|
+          allowed_projects = Project.allowed_to(user, permission)
 
           if global
             allowed_projects.any?
           else
             !(allowed_projects & projects).empty?
           end
-        end
+        }
 
         raise API::Errors::Unauthorized unless authorized
         authorized
@@ -175,9 +177,16 @@ module API
     error_response ::API::Errors::Unauthenticated, headers: auth_headers
     error_response ::API::Errors::ErrorBase, rescue_subclasses: true
 
+    # hide internal errors behind the same JSON response as all other errors
+    # only doing it in production to allow for easier debugging
+    if Rails.env.production?
+      error_response StandardError, ::API::Errors::InternalError.new, rescue_subclasses: true
+    end
+
     # run authentication before each request
     before do
       authenticate
+      set_localization
     end
 
     version 'v3', using: :path do

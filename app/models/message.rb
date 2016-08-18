@@ -28,7 +28,6 @@
 #++
 
 class Message < ActiveRecord::Base
-  include Redmine::SafeAttributes
   include OpenProject::Journal::AttachmentHelper
 
   belongs_to :board
@@ -55,12 +54,11 @@ class Message < ActiveRecord::Base
 
   acts_as_searchable columns: ['subject', 'content'],
                      include: { board: :project },
+                     references: [:boards],
                      project_key: 'project_id',
                      date_column: "#{table_name}.created_on"
 
   acts_as_watchable
-
-  attr_protected :author_id
 
   validates_presence_of :board, :subject, :content
   validates_length_of :subject, maximum: 255
@@ -70,16 +68,10 @@ class Message < ActiveRecord::Base
   after_update :update_ancestors
   after_destroy :reset_counters
 
-  scope :visible, lambda {|*args|
-    { include: { board: :project },
-      conditions: Project.allowed_to_condition(args.first || User.current, :view_messages) }
+  scope :visible, -> (*args) {
+    includes(board: :project)
+      .merge(Project.allowed_to(args.first || User.current, :view_messages))
   }
-
-  safe_attributes 'subject', 'content', 'board_id'
-  safe_attributes 'locked', 'sticky',
-                  if: lambda {|message, user|
-                    user.allowed_to?(:edit_messages, message.project)
-                  }
 
   def visible?(user = User.current)
     !user.nil? && user.allowed_to?(:view_messages, project)
@@ -111,7 +103,8 @@ class Message < ActiveRecord::Base
 
   def update_ancestors
     if board_id_changed?
-      Message.update_all("board_id = #{board_id}", ['id = ? OR parent_id = ?', root.id, root.id])
+      Message.where(['id = ? OR parent_id = ?', root.id, root.id])
+        .update_all("board_id = #{board_id}")
       Board.reset_counters!(board_id_was)
       Board.reset_counters!(board_id)
     end

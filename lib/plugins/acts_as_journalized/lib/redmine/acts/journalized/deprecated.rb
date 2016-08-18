@@ -55,8 +55,7 @@ module Redmine::Acts::Journalized
     def recipients
       notified = []
       notified = project.notified_users if project
-      notified.reject! { |user| !visible?(user) }
-      notified.map(&:mail)
+      notified.select { |user| visible?(user) }
     end
 
     def current_journal
@@ -93,7 +92,7 @@ module Redmine::Acts::Journalized
       last_journal.data.event_url(options)
     end
 
-    # deprecate :recipients => "use #last_journal.recipients"
-    # deprecate :current_journal => "use #last_journal"
+    # deprecate recipients: "use #last_journal.recipients"
+    # deprecate current_journal: "use #last_journal"
   end
 end

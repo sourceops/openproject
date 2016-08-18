@@ -29,7 +29,15 @@
 
 class Redmine::MenuManager::MenuItem < Redmine::MenuManager::TreeNode
   include Redmine::I18n
-  attr_reader :name, :url, :param, :condition, :parent, :child_menus, :last
+  attr_reader :name,
+              :url,
+              :param,
+              :context,
+              :condition,
+              :parent,
+              :child_menus,
+              :last,
+              :omit_path_check
 
   def initialize(name, url, options)
     raise ArgumentError, "Invalid option :if for menu item '#{name}'" if options[:if] && !options[:if].respond_to?(:call)
@@ -41,7 +49,8 @@ class Redmine::MenuManager::MenuItem < Redmine::MenuManager::TreeNode
     @condition = options[:if]
     @param = options[:param] || :id
     @caption = options[:caption]
-    @html_options = options[:html] || {}
+    @context = options[:context]
+    @html_options = options[:html].nil? ? {} : options[:html].dup
     # Adds a unique class to each menu item based on its name
     @html_options[:class] = [
       @html_options[:class], "#{@name.to_s.dasherize}-menu-item", 'ellipsis'
@@ -49,6 +58,7 @@ class Redmine::MenuManager::MenuItem < Redmine::MenuManager::TreeNode
     @parent = options[:parent]
     @child_menus = options[:children]
     @last = options[:last] || false
+    @omit_path_check = options[:omit_path_check] || false
     super @name.to_sym
   end
 
@@ -81,4 +91,6 @@ class Redmine::MenuManager::MenuItem < Redmine::MenuManager::TreeNode
     old_condition = @condition
     @condition = -> (project) { old_condition.call(project) && new_condition.call(project) }
   end
+
+  alias :omit_path_check? :omit_path_check
 end

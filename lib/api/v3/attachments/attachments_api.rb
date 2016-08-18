@@ -33,12 +33,10 @@ module API
     module Attachments
       class AttachmentsAPI < ::API::OpenProjectAPI
         resources :attachments do
-
           params do
             requires :id, desc: 'Attachment id'
           end
           route_param :id do
-
             before do
               @attachment = Attachment.find(params[:id])
 
@@ -48,14 +46,14 @@ module API
             end
 
             get do
-              AttachmentRepresenter.new(@attachment)
+              AttachmentRepresenter.new(@attachment, current_user: current_user)
             end
 
             delete do
               authorize(:edit_work_packages, context: @attachment.container.project)
 
               @attachment.container.attachments.delete(@attachment)
-              status 202
+              status 204
             end
           end
         end

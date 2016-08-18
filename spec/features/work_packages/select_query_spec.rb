@@ -37,18 +37,18 @@ describe 'Query selection', type: :feature do
                               member_through_role: role
   }
 
-  let(:filter_1_name) { 'assigned_to_id' }
-  let(:filter_2_name) { 'done_ratio' }
-  let(:i18n_filter_1_name) { WorkPackage.human_attribute_name(filter_1_name.to_sym) }
-  let(:i18n_filter_2_name) { WorkPackage.human_attribute_name(filter_2_name.to_sym) }
+  let(:filter_1_name) { 'assignee' }
+  let(:filter_2_name) { 'percentageDone' }
+  let(:i18n_filter_1_name) { WorkPackage.human_attribute_name(:assigned_to_id) }
+  let(:i18n_filter_2_name) { WorkPackage.human_attribute_name(:done_ratio) }
 
   let!(:query) do
     FactoryGirl.build(:query, project: project, is_public: true).tap do |query|
       query.filters = [
-        Queries::WorkPackages::Filter.new(filter_1_name, operator: '=',  values: ['me']),
-        Queries::WorkPackages::Filter.new(filter_2_name, operator: '>=', values: [10])
+        Queries::WorkPackages::Filter.new('assigned_to_id', operator: '=',  values: ['me']),
+        Queries::WorkPackages::Filter.new('done_ratio', operator: '>=', values: [10])
       ]
-      query.save
+      query.save!
     end
   end
 
@@ -68,9 +68,9 @@ describe 'Query selection', type: :feature do
 
     it 'shows the default (status) filter', js: true do
       work_packages_page.click_toolbar_button 'Activate Filter'
-      expect(work_packages_page.find_filter('status_id')).to have_content('Status')
-      expect(work_packages_page.find_filter('status_id'))
-        .to have_select('operators-status_id', selected: 'open')
+      expect(work_packages_page.find_filter('status')).to have_content('Status')
+      expect(work_packages_page.find_filter('status'))
+        .to have_select('operators-status', selected: 'open')
     end
 
     it 'shows filter count within toggle button', js: true do
@@ -81,9 +81,6 @@ describe 'Query selection', type: :feature do
   context 'when a query is selected' do
     before do
       work_packages_page.select_query query
-      # ensure the page is loaded before expecting anything
-      find('.advanced-filters--filters select option', text: /\AStart date\Z/,
-                                                       visible: false)
     end
 
     it 'shows the saved filters', js: true do
@@ -94,6 +91,22 @@ describe 'Query selection', type: :feature do
 
     it 'shows filter count within toggle button', js: true do
       expect(find_button('Activate Filter')).to have_text /2$/
+    end
+  end
+
+  context 'when the selected query is changed' do
+    let!(:query2) do
+      FactoryGirl.create(:query, project: project, is_public: true)
+    end
+
+    before do
+      work_packages_page.select_query query
+    end
+
+    it 'updates the page upon query switching', js: true do
+      work_packages_page.expect_query(query)
+      work_packages_page.select_query_from_dropdown(query2)
+      work_packages_page.expect_query(query2)
     end
   end
 end

@@ -59,7 +59,7 @@ describe ActivitiesController, type: :controller do
                                                    project_id: work_package.project_id))
       }
 
-      before { get 'index' }
+      before do get 'index' end
 
       it_behaves_like 'valid index response'
 
@@ -69,7 +69,7 @@ describe ActivitiesController, type: :controller do
         render_views
 
         it do
-          assert_tag tag: 'h3',
+        assert_select 'h3',
                      content: /#{3.day.ago.to_date.day}/,
                      sibling: { tag: 'dl',
                                 child: { tag: 'dt',
@@ -80,7 +80,7 @@ describe ActivitiesController, type: :controller do
       end
 
       describe 'empty filter selection' do
-        before { get 'index', apply: true }
+        before do get 'index', apply: true end
 
         it_behaves_like 'valid index response'
 
@@ -134,10 +134,10 @@ describe ActivitiesController, type: :controller do
         describe 'global' do
           render_views
 
-          before { get 'index', format: 'atom' }
+          before do get 'index', format: 'atom' end
 
           it do
-            assert_tag tag: 'entry',
+          assert_select 'entry',
                        child: { tag: 'link',
                                 attributes: { href: Regexp.new("/work_packages/#{wp_1.id}#") } }
           end

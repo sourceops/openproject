@@ -27,6 +27,7 @@
 #++
 
 require 'spec_helper'
+require 'features/page_objects/notification'
 require 'features/work_packages/shared_contexts'
 require 'features/work_packages/work_packages_page'
 
@@ -34,6 +35,7 @@ feature 'Query menu items' do
   let(:user) { FactoryGirl.create :admin }
   let(:project) { FactoryGirl.create :project }
   let(:work_packages_page) { WorkPackagesPage.new(project) }
+  let(:notification) { PageObjects::Notifications.new(page) }
 
   def visit_index_page(query)
     work_packages_page.select_query(query)
@@ -60,19 +62,15 @@ feature 'Query menu items' do
   context 'with dots in their name' do
     let(:query) { FactoryGirl.create :public_query, name: 'OP 3.0', project: project }
 
-    def check(input_name)
-      find(:css, "input[name=#{input_name}]").set true
-    end
-
-    it 'can be added', js: true do
+    it 'can be added', js: true, selenium: true do
       visit_index_page(query)
 
       click_on 'Settings'
       click_on 'Share ...'
-      check 'show_in_menu'
+      check 'Show page in menu'
       click_on 'Save'
 
-      expect(page).to have_selector('.flash', text: 'Successful update')
+      notification.expect_success('Successful update')
       expect(page).to have_selector('a', text: query.name)
     end
 
@@ -103,7 +101,7 @@ feature 'Query menu items' do
     end
 
     it 'displaying a success message', js: true do
-      expect(page).to have_selector('.flash', text: 'Successful update')
+      notification.expect_success('Successful update')
     end
 
     it 'is renaming and reordering the list', js: true do

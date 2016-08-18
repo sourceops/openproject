@@ -36,11 +36,11 @@ module OpenProject
         include LocalClient
 
         def client_command
-          @client_command ||= config[:client_command] || 'svn'
+          @client_command ||= self.class.config[:client_command] || 'svn'
         end
 
         def svnadmin_command
-          @svnadmin_command ||= (config[:svnadmin_command] || 'svnadmin')
+          @svnadmin_command ||= (self.class.config[:svnadmin_command] || 'svnadmin')
         end
 
         def client_version
@@ -59,10 +59,33 @@ module OpenProject
           capture_out('--version')
         end
 
+        ##
+        # Subversion may be local or remote,
+        # for now determine it by the URL type.
+        def local?
+          url.start_with?('file://')
+        end
+
+        ##
+        # Returns the local repository path
+        # (if applicable).
+        def local_repository_path
+          root_url.sub('file://', '')
+        end
+
         def initialize(url, root_url = nil, login = nil, password = nil, _path_encoding = nil)
           super(url, root_url)
+
           @login = login
           @password = password
+        end
+
+        def checkout_command
+          'svn checkout'
+        end
+
+        def subtree_checkout?
+          true
         end
 
         ##
@@ -79,8 +102,10 @@ module OpenProject
 
             return if doc.at_xpath('/info/entry/repository/uuid')
 
-            raise Exceptions::ScmUnauthorized.new if io_include?(stderr,
-                                                                 'E215004: Authentication failed')
+            stderr.each_line do |l|
+              Rails.logger.error("SVN access error: #{l}") if l =~ /E\d+:/
+              raise Exceptions::ScmUnauthorized.new if l.include?('E215004: Authentication failed')
+            end
           end
 
           raise Exceptions::ScmUnavailable
@@ -199,8 +224,12 @@ module OpenProject
         # --non-interactive         avoid prompts
         def build_svn_cmd(args)
           if @login.present?
-            args.push('--username', shell_quote(@login))
-            args.push('--password', shell_quote(@password)) if @password.present?
+            args.push('--username', @login)
+            args.push('--password', @password) if @password.present?
+          end
+
+          if self.class.config[:trustedssl]
+            args.push('--trust-server-cert')
           end
 
           args.push('--no-auth-cache', '--non-interactive')
@@ -276,13 +305,6 @@ module OpenProject
           xml_capture(cmd, force_encoding: true) do |doc|
             doc.xpath('/log/logentry').each &block
           end
-        end
-
-        def target(path = '')
-          base = path.match(/\A\//) ? root_url : url
-          uri = "#{base}/#{path}"
-          URI.escape(URI.escape(uri), '[]')
-          # shell_quote(uri.gsub(/[?<>\*]/, ''))
         end
 
         ##

@@ -32,30 +32,30 @@ class Repository < ActiveRecord::Base
   include OpenProject::Scm::ManageableRepository
 
   belongs_to :project
-  has_many :changesets, order: "#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC"
+  has_many :changesets, -> {
+    order("#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC")
+  }
 
   before_save :sanitize_urls
 
   # Managed repository lifetime
-  after_save :create_managed_repository, if: Proc.new { |repo| repo.managed? }
+  after_create :create_managed_repository, if: Proc.new { |repo| repo.managed? }
   after_destroy :delete_managed_repository, if: Proc.new { |repo| repo.managed? }
 
   # Raw SQL to delete changesets and changes in the database
-  # has_many :changesets, :dependent => :destroy is too slow for big repositories
+  # has_many :changesets, dependent: :destroy is too slow for big repositories
   before_destroy :clear_changesets
-
-  attr_protected :project_id
 
   validates_length_of :password, maximum: 255, allow_nil: true
   validate :validate_enabled_scm, on: :create
 
-  def changes
+  def file_changes
     Change.where(changeset_id: changesets).joins(:changeset)
   end
 
   # Checks if the SCM is enabled when creating a repository
   def validate_enabled_scm
-    errors.add(:type, :invalid) unless Setting.enabled_scm.include?(self.class.name.demodulize)
+    errors.add(:type, :not_available) unless OpenProject::Scm::Manager.enabled?(vendor)
   end
 
   # Removes leading and trailing whitespace
@@ -83,16 +83,37 @@ class Repository < ActiveRecord::Base
   def scm
     @scm ||= scm_adapter.new(url, root_url,
                              login, password, path_encoding)
-    @scm.root_url = @scm.root_url.presence || root_url
+
+    # override the adapter's root url with the full url
+    # if none other was set.
+    unless @scm.root_url.present?
+      @scm.root_url = root_url.presence || url
+    end
+
     @scm
+  end
+
+  def self.authorization_policy
+    nil
+  end
+
+  def self.scm_config
+    scm_adapter_class.config
+  end
+
+  def self.available_types
+    supported_types - disabled_types
+  end
+
+  ##
+  # Retrieves the :disabled_types setting from `configuration.yml
+  # To avoid wrong set operations for string-based configuration, force them to symbols.
+  def self.disabled_types
+    (scm_config[:disabled_types] || []).map(&:to_sym)
   end
 
   def vendor
     self.class.vendor
-  end
-
-  def supported_types
-    []
   end
 
   def supports_cat?
@@ -109,6 +130,14 @@ class Repository < ActiveRecord::Base
 
   def supports_directory_revisions?
     false
+  end
+
+  def supports_checkout_info?
+    true
+  end
+
+  def self.requires_checkout_base_url?
+    true
   end
 
   def entry(path = nil, identifier = nil)
@@ -155,29 +184,47 @@ class Repository < ActiveRecord::Base
     path
   end
 
+  ##
+  # Update the required storage information, when necessary.
+  # Returns whether an asynchronous count refresh has been requested.
+  def update_required_storage
+    if scm.storage_available?
+      oldest_cachable_time = Setting.repository_storage_cache_minutes.to_i.minutes.ago
+      if storage_updated_at.nil? ||
+         storage_updated_at < oldest_cachable_time
+
+        Delayed::Job.enqueue ::Scm::StorageUpdaterJob.new(self)
+        return true
+      end
+    end
+
+    false
+  end
+
   # Finds and returns a revision with a number or the beginning of a hash
   def find_changeset_by_name(name)
     name = name.to_s
     return nil if name.blank?
-    changesets.find(:first, conditions: (name.match(/\A\d*\z/) ? ['revision = ?', name] : ['revision LIKE ?', name + '%']))
+    changesets.where((name.match(/\A\d*\z/) ? ['revision = ?', name] : ['revision LIKE ?', name + '%'])).first
   end
 
   def latest_changeset
-    @latest_changeset ||= changesets.find(:first)
+    @latest_changeset ||= changesets.first
   end
 
   # Returns the latest changesets for +path+
   # Default behaviour is to search in cached changesets
   def latest_changesets(path, _rev, limit = 10)
     if path.blank?
-      changesets.find(:all, include: :user,
-                            order: "#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC",
-                            limit: limit)
+      changesets.includes(:user)
+        .order("#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC")
+        .limit(limit)
     else
-      changes.find(:all, include: { changeset: :user },
-                         conditions: ['path = ?', path.with_leading_slash],
-                         order: "#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC",
-                         limit: limit).map(&:changeset)
+      changesets.includes(changeset: :user)
+        .where(['path = ?', path.with_leading_slash])
+        .order("#{Changeset.table_name}.committed_on DESC, #{Changeset.table_name}.id DESC")
+        .limit(limit)
+        .map(&:changeset)
     end
   end
 
@@ -187,7 +234,7 @@ class Repository < ActiveRecord::Base
 
   # Returns an array of committers usernames and associated user_id
   def committers
-    @committers ||= Changeset.connection.select_rows("SELECT DISTINCT committer, user_id FROM #{Changeset.table_name} WHERE repository_id = #{id}")
+    @committers ||= Changeset.where(repository_id: id).distinct.pluck(:committer, :user_id)
   end
 
   # Maps committers username to a user ids
@@ -197,7 +244,8 @@ class Repository < ActiveRecord::Base
         new_user_id = h[committer]
         if new_user_id && (new_user_id.to_i != user_id.to_i)
           new_user_id = (new_user_id.to_i > 0 ? new_user_id.to_i : nil)
-          Changeset.update_all("user_id = #{ new_user_id.nil? ? 'NULL' : new_user_id }", ['repository_id = ? AND committer = ?', id, committer])
+          Changeset.where(['repository_id = ? AND committer = ?', id, committer])
+            .update_all("user_id = #{new_user_id.nil? ? 'NULL' : new_user_id}")
         end
       end
       @committers = nil
@@ -217,11 +265,12 @@ class Repository < ActiveRecord::Base
       return @found_committer_users[committer] if @found_committer_users.has_key?(committer)
 
       user = nil
-      c = changesets.find(:first, conditions: { committer: committer }, include: :user)
+      c = changesets.includes(:user).references(:users).find_by(committer: committer)
       if c && c.user
         user = c.user
       elsif committer.strip =~ /\A([^<]+)(<(.*)>)?\z/
-        username, email = $1.strip, $3
+        username = $1.strip
+        email = $3
         u = User.find_by_login(username)
         u ||= User.find_by_mail(email) unless email.blank?
         user = u
@@ -240,7 +289,7 @@ class Repository < ActiveRecord::Base
   # Can be called periodically by an external script
   # eg. ruby script/runner "Repository.fetch_changesets"
   def self.fetch_changesets
-    Project.active.has_module(:repository).find(:all, include: :repository).each do |project|
+    Project.active.has_module(:repository).includes(:repository).each do |project|
       if project.repository
         begin
           project.repository.fetch_changesets
@@ -261,7 +310,7 @@ class Repository < ActiveRecord::Base
   # Builds a model instance of type +Repository::#{vendor}+ with the given parameters.
   #
   # @param [Project] project The project this repository belongs to.
-  # @param [String] vendor   The SCM vendor name (e.g., Git, Subversion)
+  # @param [Symbol] vendor   The SCM vendor symbol (e.g., :git, :subversion)
   # @param [Hash] params     Custom parameters for this SCM as delivered from the repository
   #                          field.
   #
@@ -282,7 +331,8 @@ class Repository < ActiveRecord::Base
     repository = klass.new(args)
     repository.attributes = args
     repository.project = project
-    repository.scm_type = type
+
+    set_verified_type!(repository, type) unless type.nil?
 
     repository.configure(type, args)
 
@@ -305,6 +355,20 @@ class Repository < ActiveRecord::Base
   end
 
   ##
+  # Verifies that the chosen scm type can be selected
+  def self.set_verified_type!(repository, type)
+    if repository.class.available_types.include? type
+      repository.scm_type = type
+    else
+      raise OpenProject::Scm::Exceptions::RepositoryBuildError.new(
+        I18n.t('repositories.errors.disabled_or_unknown_type',
+               type: type,
+               vendor: repository.vendor)
+      )
+    end
+  end
+
+  ##
   # Allow global permittible params. May be overridden by plugins
   def self.permitted_params(params)
     params.permit(:url)
@@ -314,7 +378,21 @@ class Repository < ActiveRecord::Base
     nil
   end
 
+  def self.enabled?
+    OpenProject::Scm::Manager.enabled?(vendor)
+  end
+
+  ##
+  # Returns the SCM vendor symbol for this repository
+  # e.g., Repository::Git => :git
   def self.vendor
+    vendor_name.underscore.to_sym
+  end
+
+  ##
+  # Returns the SCM vendor name for this repository
+  # e.g., Repository::Git => Git
+  def self.vendor_name
     name.demodulize
   end
 
@@ -326,13 +404,15 @@ class Repository < ActiveRecord::Base
   end
 
   def clear_changesets
-    cs, ch, ci = Changeset.table_name, Change.table_name, "#{table_name_prefix}changesets_work_packages#{table_name_suffix}"
-    connection.delete("DELETE FROM #{ch} WHERE #{ch}.changeset_id IN (SELECT #{cs}.id FROM #{cs} WHERE #{cs}.repository_id = #{id})")
-    connection.delete("DELETE FROM #{ci} WHERE #{ci}.changeset_id IN (SELECT #{cs}.id FROM #{cs} WHERE #{cs}.repository_id = #{id})")
-    connection.delete("DELETE FROM #{cs} WHERE #{cs}.repository_id = #{id}")
+    cs = Changeset.table_name
+    ch = Change.table_name
+    ci = "#{table_name_prefix}changesets_work_packages#{table_name_suffix}"
+    self.class.connection.delete("DELETE FROM #{ch} WHERE #{ch}.changeset_id IN (SELECT #{cs}.id FROM #{cs} WHERE #{cs}.repository_id = #{id})")
+    self.class.connection.delete("DELETE FROM #{ci} WHERE #{ci}.changeset_id IN (SELECT #{cs}.id FROM #{cs} WHERE #{cs}.repository_id = #{id})")
+    self.class.connection.delete("DELETE FROM #{cs} WHERE #{cs}.repository_id = #{id}")
   end
 
-  private
+  protected
 
   ##
   # Create local managed repository request when the built instance
@@ -353,10 +433,11 @@ class Repository < ActiveRecord::Base
   # is managed by OpenProject
   def delete_managed_repository
     service = Scm::DeleteManagedRepositoryService.new(self)
-    # Even if the service can't remove the physical repository,
-    # we should continue removing the associated instance.
-    service.call
-
-    true
+    if service.call
+      true
+    else
+      errors.add(:base, service.localized_rejected_reason)
+      raise ActiveRecord::Rollback
+    end
   end
 end

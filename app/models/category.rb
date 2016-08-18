@@ -28,12 +28,9 @@
 #++
 
 class Category < ActiveRecord::Base
-  include Redmine::SafeAttributes
   belongs_to :project
   belongs_to :assigned_to, class_name: 'Principal', foreign_key: 'assigned_to_id'
   has_many :work_packages, foreign_key: 'category_id', dependent: :nullify
-
-  attr_protected :project_id
 
   validates_presence_of :name
   validates_uniqueness_of :name, scope: [:project_id]
@@ -46,15 +43,13 @@ class Category < ActiveRecord::Base
     end
   end
 
-  safe_attributes 'name', 'assigned_to_id'
-
   alias :destroy_without_reassign :destroy
 
   # Destroy the category
   # If a category is specified, issues are reassigned to this category
   def destroy(reassign_to = nil)
     if reassign_to && reassign_to.is_a?(Category) && reassign_to.project == project
-      WorkPackage.update_all("category_id = #{reassign_to.id}", "category_id = #{id}")
+      WorkPackage.where("category_id = #{id}").update_all("category_id = #{reassign_to.id}")
     end
     destroy_without_reassign
   end

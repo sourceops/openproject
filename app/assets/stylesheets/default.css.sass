@@ -31,6 +31,7 @@
 //= require print
 //= require scm
 //= require top-shelf
+//= require dragula
 //= require openproject_plugins
 
 //= require_self
@@ -44,13 +45,17 @@
 
 @import layout/all
 @import content/accounts
+@import content/accounts_mobile
 @import content/badges
 @import content/context_menu
 @import content/forms
+@import content/forms_mobile
 @import content/choice
+@import content/collapsible_section
+@import content/copy_to_clipboard
 @import content/ui_select
-@import content/flash_messages
 @import content/notifications
+@import content/notifications_mobile
 @import content/calendar
 @import content/links
 @import content/action_menu_main
@@ -61,36 +66,32 @@
 @import content/icon_control
 @import content/boxes
 @import content/watchers
-@import content/work_packages
 @import content/simple_filters
 @import content/advanced_filters
-@import content/work_packages_table
 @import content/attributes_key_value
 @import content/attributes_group
 @import content/attributes_table
+@import content/information_section
+@import content/widget_box
+@import content/list
 
-@import content/work_package_details/activities_tab
-@import content/work_package_details/attachments_tab
-@import content/work_package_details/relations_tab
-@import content/work_package_details/watchers_tab
+@import content/work_packages
 
 @import content/expandable_group_content
 @import content/control_colors
-@import content/components_add_comments_default
-@import content/components_add_comments_onclick
 
+@import content/table
 @import content/tables
 @import content/tabular
 @import content/timelines
 @import content/user_avatars
 @import content/preview
 @import content/modal
+@import content/ng_dialog
 @import content/grid_table
 @import content/journal
-@import content/legacy_pagination
 @import content/pagination
 @import content/progress_bar
-@import content/in_place_editing
 
 @import content/form_error_messages
 @import content/ajax_indicator
@@ -99,11 +100,22 @@
 @import content/autocomplete
 @import content/diff
 
+@import content/projects_list
+
 @import content/jquery_ui
 @import content/datepicker
 @import content/atwho
 
 @import content/select2
 
+@import specific/homescreen
+@import specific/announcements
+@import specific/onboarding
+@import specific/accessibility
+
 @import misc_legacy
 @import jstoolbar
+
+
+
+@import _work_packages_show_view_overwrite

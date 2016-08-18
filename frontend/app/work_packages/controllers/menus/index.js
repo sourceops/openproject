@@ -28,26 +28,14 @@
 
 
 angular.module('openproject.workPackages')
-  .factory('ColumnContextMenu', [
+  .factory('ShowMoreDropdownMenu', [
     'ngContextMenu',
     function(ngContextMenu) {
       return ngContextMenu({
-        controller: 'ColumnContextMenuController',
-        controllerAs: 'contextMenu',
-        templateUrl: '/templates/work_packages/menus/column_context_menu.html',
-        container: '.work-packages--list-table-area'
+        templateUrl: '/templates/work_packages/menus/show_more_dropdown_menu.html',
+        container: '#action-show-more-dropdown-menu'
       });
     }
-  ])
-  .controller('ColumnContextMenuController', [
-    '$scope',
-    'ColumnContextMenu',
-    'I18n',
-    'QueryService',
-    'WorkPackagesTableHelper',
-    'WorkPackagesTableService',
-    'columnsModal',
-    require('./column-context-menu-controller')
   ])
   .factory('SettingsDropdownMenu', [
     'ngContextMenu',
@@ -55,7 +43,7 @@ angular.module('openproject.workPackages')
       return ngContextMenu({
         controller: 'SettingsDropdownMenuController',
         templateUrl: '/templates/work_packages/menus/settings_dropdown_menu.html',
-        container: '#toolbar'
+        container: '.toolbar'
       });
     }
   ])
@@ -73,41 +61,40 @@ angular.module('openproject.workPackages')
     'AuthorisationService',
     '$window',
     '$state',
-    '$timeout', require('./settings-dropdown-menu-controller')
-  ])
-  .factory('TasksDropdownMenu', [
-    'ngContextMenu',
-    function(ngContextMenu) {
-      return ngContextMenu({
-        templateUrl: '/templates/work_packages/menus/tasks_dropdown_menu.html',
-        container: '#toolbar'
-      });
-    }
+    '$timeout',
+    'NotificationsService',
+    require('./settings-dropdown-menu-controller')
   ])
   .constant('PERMITTED_CONTEXT_MENU_ACTIONS', [
-    'edit', 'watch', 'log_time',
-    'duplicate', 'move', 'copy', 'delete'
-  ])
-  .factory('WorkPackageContextMenu', [
-    'ngContextMenu',
-    function(ngContextMenu) {
-      return ngContextMenu({
-        controller: 'WorkPackageContextMenuController',
-        controllerAs: 'contextMenu',
-        templateUrl: '/templates/work_packages/menus/work_package_context_menu.html'
-      });
+    {
+      icon: 'edit',
+      link: 'update'
+    },
+    // TODO: reenable watch
+    {
+      icon: 'log_time',
+      link: 'logTime'
+    },
+    {
+      icon: 'move',
+      link: 'move'
+    },
+    {
+      icon: 'copy',
+      link: 'copy'
+    },
+    {
+      icon: 'delete',
+      link: 'delete'
+    },
+    {
+      icon: 'export-pdf',
+      link: 'pdf'
+    },
+    {
+      icon: 'export-atom',
+      link: 'atom'
     }
-  ])
-  .controller('WorkPackageContextMenuController', [
-    '$scope',
-    'WorkPackagesTableHelper',
-    'WorkPackageContextMenuHelper',
-    'WorkPackageService',
-    'WorkPackagesTableService',
-    'I18n',
-    '$window',
-    'PERMITTED_CONTEXT_MENU_ACTIONS',
-    require('./work-package-context-menu-controller')
   ])
   .factory('DetailsMoreDropdownMenu', [
     'ngContextMenu',

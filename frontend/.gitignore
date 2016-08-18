@@ -5,4 +5,8 @@
 /npm-debug.log
 /public/**/*
 /tests/unit/reports
+/tests/unit/tests/typescript
 /tmp
+
+/tests/openproject-test-bundle.js
+/tests/openproject-main.css

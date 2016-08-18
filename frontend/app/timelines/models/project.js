@@ -274,26 +274,6 @@ module.exports = function(PathHelper) {
           nc = +1;
         }
 
-        if (a.hasSecondLevelGroupingAdjustment && b.hasSecondLevelGroupingAdjustment) {
-          if (parseInt(timeline.options.grouping_two_sort, 10) === 1) {
-            if (dc !== 0) {
-              return dc;
-            }
-
-            if (nc !== 0) {
-              return nc;
-            }
-          } else if (parseInt(timeline.options.grouping_two_sort, 10) === 2) {
-            if (nc !== 0) {
-              return nc;
-            }
-
-            if (dc !== 0) {
-              return dc;
-            }
-          }
-        }
-
         if (parseInt(timeline.options.project_sort, 10) === 1 && a.is(Project) && b.is(Project)) {
           if (nc !== 0) {
             return nc;
@@ -435,7 +415,7 @@ module.exports = function(PathHelper) {
       return this.getParent();
     },
     getUrl: function() {
-      var url = PathHelper.staticProjectPath(this.identifier);
+      var url = PathHelper.projectPath(this.identifier);
 
       url += "/timelines";
 

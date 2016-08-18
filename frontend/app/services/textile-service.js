@@ -31,8 +31,8 @@ module.exports = function($http, PathHelper) {
     renderWithWorkPackageContext: renderWithWorkPackageContext
   };
 
-  function renderWithWorkPackageContext(workPackageForm, text) {
-    return render(workPackageForm.links.previewMarkup.props.href, text);
+  function renderWithWorkPackageContext(workPackage, text) {
+    return render(workPackage.previewMarkup, text);
   }
 
   function render(url, text) {

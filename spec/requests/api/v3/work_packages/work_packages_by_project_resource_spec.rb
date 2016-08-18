@@ -33,25 +33,229 @@ describe API::V3::WorkPackages::WorkPackagesByProjectAPI, type: :request do
   include Rack::Test::Methods
   include API::V3::Utilities::PathHelper
 
+  let(:current_user) {
+    FactoryGirl.build(:user, member_in_project: project, member_through_role: role)
+  }
+  let(:role) { FactoryGirl.create(:role, permissions: permissions) }
+  let(:permissions) { [:view_work_packages] }
   let(:project) { FactoryGirl.create(:project_with_types, is_public: false) }
+  let(:path) { api_v3_paths.work_packages_by_project project.id }
+
+  before do
+    allow(User).to receive(:current).and_return current_user
+  end
+
+  describe '#get' do
+    let(:work_packages) { [] }
+    subject { last_response }
+
+    before do
+      work_packages.each(&:save!)
+      get path
+    end
+
+    it 'succeeds' do
+      expect(subject.status).to eql 200
+    end
+
+    context 'not allowed to see the project' do
+      let(:current_user) { FactoryGirl.build(:user) }
+
+      it 'fails with HTTP Not Found' do
+        expect(subject.status).to eql 404
+      end
+    end
+
+    context 'not allowed to see work packages' do
+      let(:permissions) { [:view_project] }
+
+      it 'fails with HTTP Not Found' do
+        expect(subject.status).to eql 403
+      end
+    end
+
+    describe 'advanced query options' do
+      let(:base_path) { api_v3_paths.work_packages_by_project project.id }
+      let(:query) { {} }
+      let(:path) { "#{base_path}?#{query.to_query}" }
+
+      describe 'sorting' do
+        let(:query) { { sortBy: '[["id", "desc"]]' } }
+        let(:work_packages) { FactoryGirl.create_list(:work_package, 2, project: project) }
+
+        it 'returns both elements' do
+          expect(subject.body).to be_json_eql(2).at_path('count')
+          expect(subject.body).to be_json_eql(2).at_path('total')
+        end
+
+        it 'returns work packages in the expected order' do
+          first_wp = work_packages.first
+          last_wp = work_packages.last
+
+          expect(subject.body).to be_json_eql(last_wp.id).at_path('_embedded/elements/0/id')
+          expect(subject.body).to be_json_eql(first_wp.id).at_path('_embedded/elements/1/id')
+        end
+      end
+
+      describe 'filtering' do
+        let(:query) {
+          {
+            filters: [
+              {
+                priority: {
+                  operator: '=',
+                  values: [priority1.id.to_s]
+                }
+              }
+            ].to_json
+          }
+        }
+        let(:priority1) { FactoryGirl.create(:priority, name: 'Prio A') }
+        let(:priority2) { FactoryGirl.create(:priority, name: 'Prio B') }
+        let(:work_packages) {
+          [
+            FactoryGirl.create(:work_package, project: project, priority: priority1),
+            FactoryGirl.create(:work_package, project: project, priority: priority2)
+          ]
+        }
+
+        it 'returns only one element' do
+          expect(subject.body).to be_json_eql(1).at_path('count')
+          expect(subject.body).to be_json_eql(1).at_path('total')
+        end
+
+        it 'returns the matching element' do
+          expected_id = work_packages.first.id
+          expect(subject.body).to be_json_eql(expected_id).at_path('_embedded/elements/0/id')
+        end
+      end
+
+      describe 'grouping' do
+        let(:query) { { groupBy: 'priority' } }
+        let(:priority1) { FactoryGirl.build(:priority, name: 'Prio A', position: 2) }
+        let(:priority2) { FactoryGirl.build(:priority, name: 'Prio B', position: 1) }
+        let(:work_packages) {
+          [
+            FactoryGirl.create(:work_package,
+                               project: project,
+                               priority: priority1,
+                               estimated_hours: 1),
+            FactoryGirl.create(:work_package,
+                               project: project,
+                               priority: priority2,
+                               estimated_hours: 2),
+            FactoryGirl.create(:work_package,
+                               project: project,
+                               priority: priority1,
+                               estimated_hours: 3)
+          ]
+        }
+
+        it 'returns all elements' do
+          expect(subject.body).to be_json_eql(3).at_path('count')
+          expect(subject.body).to be_json_eql(3).at_path('total')
+        end
+
+        it 'returns work packages ordered by priority' do
+          prio1_path = api_v3_paths.priority(priority1.id)
+          prio2_path = api_v3_paths.priority(priority2.id)
+
+          expect(subject.body).to(be_json_eql(prio2_path.to_json)
+                                    .at_path('_embedded/elements/0/_links/priority/href'))
+          expect(subject.body).to(be_json_eql(prio1_path.to_json)
+                                    .at_path('_embedded/elements/1/_links/priority/href'))
+          expect(subject.body).to(be_json_eql(prio1_path.to_json)
+                                    .at_path('_embedded/elements/2/_links/priority/href'))
+        end
+
+        it 'contains group elements' do
+          expected_group1 = {
+            _links: { valueLink: { href: api_v3_paths.priority(priority1.id) } },
+            value: priority1.name,
+            count: 2
+          }
+          expected_group2 = {
+            _links: { valueLink: { href: api_v3_paths.priority(priority2.id) } },
+            value: priority2.name,
+            count: 1
+          }
+
+          expect(subject.body).to include_json(expected_group1.to_json).at_path('groups')
+          expect(subject.body).to include_json(expected_group2.to_json).at_path('groups')
+        end
+
+        context 'displaying sums' do
+          let(:query) { { groupBy: 'priority', showSums: 'true' } }
+
+          it 'contains extended group elements' do
+            expected_group1 = {
+              _links: { valueLink: { href: api_v3_paths.priority(priority1.id) } },
+              value: priority1.name,
+              count: 2,
+              sums: {
+                estimatedTime: 'PT4H'
+              }
+            }
+            expected_group2 = {
+              _links: { valueLink: { href: api_v3_paths.priority(priority2.id) } },
+              value: priority2.name,
+              count: 1,
+              sums: {
+                estimatedTime: 'PT2H'
+              }
+            }
+
+            expect(subject.body).to include_json(expected_group1.to_json).at_path('groups')
+            expect(subject.body).to include_json(expected_group2.to_json).at_path('groups')
+          end
+        end
+      end
+
+      describe 'displaying sums' do
+        let(:query) { { showSums: 'true' } }
+        let(:work_packages) {
+          [
+            FactoryGirl.create(:work_package, project: project, estimated_hours: 1),
+            FactoryGirl.create(:work_package, project: project, estimated_hours: 2)
+          ]
+        }
+
+        it 'returns both elements' do
+          expect(subject.body).to be_json_eql(2).at_path('count')
+          expect(subject.body).to be_json_eql(2).at_path('total')
+        end
+
+        it 'contains the sum element' do
+          expected = {
+            estimatedTime: 'PT3H'
+          }
+
+          expect(subject.body).to be_json_eql(expected.to_json).at_path('totalSums')
+        end
+      end
+    end
+  end
 
   describe '#post' do
+    let(:permissions) { [:add_work_packages, :view_project] }
     let(:status) { FactoryGirl.build(:status, is_default: true) }
     let(:priority) { FactoryGirl.build(:priority, is_default: true) }
-    let(:parameters) { { subject: 'new work packages' } }
-    let(:permissions) { [:add_work_packages, :view_project] }
-    let(:role) { FactoryGirl.create(:role, permissions: permissions) }
-    let(:current_user) do
-      FactoryGirl.build(:user, member_in_project: project, member_through_role: role)
+    let(:parameters) do
+      {
+        subject: 'new work packages',
+        _links: {
+          type: {
+            href: api_v3_paths.type(project.types.first.id)
+          }
+        }
+      }
     end
-    let(:path) { api_v3_paths.work_packages_by_project project.id }
 
     before do
       status.save!
       priority.save!
 
-      allow(User).to receive(:current).and_return current_user
-      ActionMailer::Base.deliveries.clear
+      FactoryGirl.create(:user_preference, user: current_user, others: { no_self_notified: false })
       post path, parameters.to_json, 'CONTENT_TYPE' => 'application/json'
     end
 
@@ -92,7 +296,7 @@ describe API::V3::WorkPackages::WorkPackagesByProjectAPI, type: :request do
     end
 
     context 'no permissions' do
-      let(:current_user) { FactoryGirl.build(:user) }
+      let(:current_user) { FactoryGirl.create(:user) }
 
       it 'should hide the endpoint' do
         expect(last_response.status).to eq(404)
@@ -112,9 +316,7 @@ describe API::V3::WorkPackages::WorkPackagesByProjectAPI, type: :request do
     context 'empty parameters' do
       let(:parameters) { {} }
 
-      it_behaves_like 'constraint violation' do
-        let(:message) { "Subject can't be blank" }
-      end
+      it_behaves_like 'multiple errors', 422
 
       it 'should not create a work package' do
         expect(WorkPackage.all.count).to eq(0)
@@ -122,7 +324,16 @@ describe API::V3::WorkPackages::WorkPackagesByProjectAPI, type: :request do
     end
 
     context 'bogus parameters' do
-      let(:parameters) { { bogus: nil } }
+      let(:parameters) do
+        {
+          bogus: 'bogus',
+          _links: {
+            type: {
+              href: api_v3_paths.type(project.types.first.id)
+            }
+          }
+        }
+      end
 
       it_behaves_like 'constraint violation' do
         let(:message) { "Subject can't be blank" }
@@ -134,7 +345,16 @@ describe API::V3::WorkPackages::WorkPackagesByProjectAPI, type: :request do
     end
 
     context 'invalid value' do
-      let(:parameters) { { subject: nil } }
+      let(:parameters) do
+        {
+          subject: nil,
+          _links: {
+            type: {
+              href: api_v3_paths.type(project.types.first.id)
+            }
+          }
+        }
+      end
 
       it_behaves_like 'constraint violation' do
         let(:message) { "Subject can't be blank" }

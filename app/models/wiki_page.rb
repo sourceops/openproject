@@ -31,12 +31,16 @@ require 'diff'
 require 'enumerator'
 
 class WikiPage < ActiveRecord::Base
-  include ActiveModel::ForbiddenAttributesProtection
-
   belongs_to :wiki
   has_one :content, class_name: 'WikiContent', foreign_key: 'page_id', dependent: :destroy
   acts_as_attachable delete_permission: :delete_wiki_pages_attachments
   acts_as_tree dependent: :nullify, order: 'title'
+
+  # Generate slug of the title
+  acts_as_url :title,
+              url_attribute: :slug,
+              scope: :wiki_id, # Unique slugs per WIKI
+              sync_url: true # Keep slug updated on #rename
 
   acts_as_watchable
   acts_as_event title: Proc.new { |o| "#{Wiki.model_name.human}: #{o.title}" },
@@ -46,13 +50,12 @@ class WikiPage < ActiveRecord::Base
 
   acts_as_searchable columns: ["#{WikiPage.table_name}.title", "#{WikiContent.table_name}.text"],
                      include: [{ wiki: :project }, :content],
+                     references: [:wikis, :wiki_contents],
                      project_key: "#{Wiki.table_name}.project_id"
 
   attr_accessor :redirect_existing_links
 
   validates_presence_of :title
-  validates_format_of :title, with: /\A[^,\.\/\?\;\|\s]*\z/
-  validates_uniqueness_of :title, scope: :wiki_id, case_sensitive: false
   validates_associated :content
 
   validate :validate_consistency_of_parent_title
@@ -64,12 +67,13 @@ class WikiPage < ActiveRecord::Base
   before_destroy :remove_redirects
 
   # eager load information about last updates, without loading text
-  scope :with_updated_on,
-        select: "#{WikiPage.table_name}.*, #{WikiContent.table_name}.updated_on",
-        joins: "LEFT JOIN #{WikiContent.table_name} ON #{WikiContent.table_name}.page_id = #{WikiPage.table_name}.id"
+  scope :with_updated_on, -> {
+    select("#{WikiPage.table_name}.*, #{WikiContent.table_name}.updated_on")
+      .joins("LEFT JOIN #{WikiContent.table_name} ON #{WikiContent.table_name}.page_id = #{WikiPage.table_name}.id")
+  }
 
-  scope :main_pages, lambda {|wiki_id|
-    { conditions: { wiki_id: wiki_id, parent_id: nil } }
+  scope :main_pages, -> (wiki_id) {
+    where(wiki_id: wiki_id, parent_id: nil)
   }
 
   # Wiki pages that are protected by default
@@ -83,6 +87,10 @@ class WikiPage < ActiveRecord::Base
     end
   end
 
+  def slug
+    read_attribute(:slug).presence || title.try(:to_url)
+  end
+
   def delete_wiki_menu_item
     menu_item.destroy if menu_item
     # ensure there is a menu item for the wiki
@@ -94,28 +102,28 @@ class WikiPage < ActiveRecord::Base
   end
 
   def title=(value)
-    value = Wiki.titleize(value)
     @previous_title = read_attribute(:title) if @previous_title.blank?
     write_attribute(:title, value)
   end
 
   def update_redirects
-    self.title = Wiki.titleize(title)
     # Manage redirects if the title has changed
     if !@previous_title.blank? && (@previous_title != title) && !new_record?
       # Update redirects that point to the old title
-      wiki.redirects.find_all_by_redirects_to(@previous_title).each do |r|
+      previous_slug = @previous_title.to_url
+      wiki.redirects.where(redirects_to: previous_slug).each do |r|
         r.redirects_to = title
         r.title == r.redirects_to ? r.destroy : r.save
       end
       # Remove redirects for the new title
-      wiki.redirects.find_all_by_title(title).each(&:destroy)
+      wiki.redirects.where(title: slug).each(&:destroy)
       # Create a redirect to the new title
-      wiki.redirects << WikiRedirect.new(title: @previous_title, redirects_to: title) unless redirect_existing_links == '0'
+      wiki.redirects << WikiRedirect.new(title: previous_slug, redirects_to: slug) unless redirect_existing_links == '0'
 
       # Change title of dependent wiki menu item
-      dependent_item = MenuItems::WikiMenuItem.find_by_navigatable_id_and_title(wiki.id, @previous_title)
+      dependent_item = MenuItems::WikiMenuItem.find_by(navigatable_id: wiki.id, name: previous_slug)
       if dependent_item
+        dependent_item.name = slug
         dependent_item.title = title
         dependent_item.save!
       end
@@ -126,15 +134,11 @@ class WikiPage < ActiveRecord::Base
 
   # Remove redirects to this page
   def remove_redirects
-    wiki.redirects.find_all_by_redirects_to(title).each(&:destroy)
-  end
-
-  def pretty_title
-    WikiPage.pretty_title(title)
+    wiki.redirects.where(redirects_to: slug).each(&:destroy)
   end
 
   def content_for_version(version = nil)
-    journal = content.versions.find_by_version(version.to_i) if version
+    journal = content.versions.find_by(version: version.to_i) if version
 
     unless journal.nil? || content.version == journal.version
       content_version = WikiContent.new journal.data.attributes.except('id', 'journal_id')
@@ -151,20 +155,16 @@ class WikiPage < ActiveRecord::Base
     version_from = version_from ? version_from.to_i : version_to - 1
     version_to, version_from = version_from, version_to unless version_from < version_to
 
-    content_to = content.versions.find_by_version(version_to)
-    content_from = content.versions.find_by_version(version_from)
+    content_to = content.versions.find_by(version: version_to)
+    content_from = content.versions.find_by(version: version_from)
 
     (content_to && content_from) ? WikiDiff.new(content_to, content_from) : nil
   end
 
   def annotate(version = nil)
     version = version ? version.to_i : content.version
-    c = content.versions.find_by_version(version)
+    c = content.versions.find_by(version: version)
     c ? WikiAnnotate.new(c) : nil
-  end
-
-  def self.pretty_title(str)
-    (str && str.is_a?(String)) ? str.tr('_', ' ') : str
   end
 
   def project
@@ -200,7 +200,7 @@ class WikiPage < ActiveRecord::Base
   end
 
   def parent_title
-    @parent_title || (parent && parent.pretty_title)
+    @parent_title || (parent && parent.title)
   end
 
   def parent_title=(t)
@@ -210,7 +210,7 @@ class WikiPage < ActiveRecord::Base
   end
 
   def menu_item
-    MenuItems::WikiMenuItem.find_by_title_and_navigatable_id(title, wiki_id)
+    MenuItems::WikiMenuItem.find_by(name: slug, navigatable_id: wiki_id)
   end
 
   def nearest_menu_item
@@ -218,7 +218,7 @@ class WikiPage < ActiveRecord::Base
   end
 
   # Returns the wiki menu item of nearest ancestor page that has a wiki menu item.
-  # To restrict the result to main menu items pass <tt>:is_main_item => true</tt> as +options+ hash
+  # To restrict the result to main menu items pass <tt>is_main_item: true</tt> as +options+ hash
   def nearest_parent_menu_item(options = {})
     return nil unless parent
 
@@ -235,12 +235,12 @@ class WikiPage < ActiveRecord::Base
     if item = menu_item
       item.name
     else
-      pretty_title
+      title
     end
   end
 
   def to_param
-    CGI.escape title
+    slug || title.to_url
   end
 
   def is_only_wiki_page?
@@ -281,11 +281,12 @@ class WikiAnnotate
     current_lines = current.journable.text.split(/\r?\n/)
     @lines = current_lines.map { |t| [nil, nil, t] }
     positions = []
-    current_lines.size.times { |i| positions << i }
+    current_lines.size.times do |i| positions << i end
     while current.previous
       d = current.previous.journable.text.split(/\r?\n/).diff(current.journable.text.split(/\r?\n/)).diffs.flatten
       d.each_slice(3) do |s|
-        sign, line = s[0], s[1]
+        sign = s[0]
+        line = s[1]
         if sign == '+' && positions[line] && positions[line] != -1
           if @lines[positions[line]][0].nil?
             @lines[positions[line]][0] = current.version
@@ -294,7 +295,8 @@ class WikiAnnotate
         end
       end
       d.each_slice(3) do |s|
-        sign, line = s[0], s[1]
+        sign = s[0]
+        line = s[1]
         if sign == '-'
           positions.insert(line, -1)
         else

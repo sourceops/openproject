@@ -63,7 +63,10 @@ class AuthSourcesController < ApplicationController
 
   def update
     @auth_source = AuthSource.find(params[:id])
-    if @auth_source.update_attributes permitted_params.auth_source
+    updated = permitted_params.auth_source
+    updated.delete :account_password if updated[:account_password].blank?
+
+    if @auth_source.update_attributes updated
       flash[:notice] = l(:notice_successful_update)
       redirect_to action: 'index'
     else
@@ -84,9 +87,12 @@ class AuthSourcesController < ApplicationController
 
   def destroy
     @auth_source = AuthSource.find(params[:id])
-    unless @auth_source.users.find(:first)
+    if @auth_source.users.empty?
       @auth_source.destroy
-      flash[:notice] = l(:notice_successful_delete)
+
+      flash[:notice] = t(:notice_successful_delete)
+    else
+      flash[:warning] = t(:notice_wont_delete_auth_source)
     end
     redirect_to action: 'index'
   end

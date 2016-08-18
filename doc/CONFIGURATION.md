@@ -79,6 +79,7 @@ storage config above like this:
 * `database_cipher_key`     (default: nil)
 * `scm_git_command` (default: 'git')
 * `scm_subversion_command` (default: 'svn')
+* `force_help_link` (default: nil)
 * `session_store`: `active_record_store`, `cache_store`, or `cookie_store` (default: cache_store)
 * [`omniauth_direct_login_provider`](#omniauth-direct-login-provider) (default: nil)
 * [`disable_password_login`](#disable-password-login) (default: false)
@@ -87,6 +88,22 @@ storage config above like this:
 * [`disabled_modules`](#disabled-modules) (default: [])
 * [`blacklisted_routes`](#blacklisted-routes) (default: [])
 * [`global_basic_auth`](#global-basic-auth)
+
+## Passing data structures
+
+The configuration uses YAML to parse overrides from ENV. Using YAML inline syntax, you can:
+
+1. Pass a symbol as an override using `OPENPROJECT_SESSION_STORE=":active_record_store"`
+
+1. Pass arrays by wrapping values in brackets (e.g., `[val1, val2, val3]`).
+
+2. Pass hashes with `{key: foo, key2: bar}`.
+
+To pass symbol arrays or hashes with symbol keys, use the YAML `!ruby/symbol` notiation.
+Example: `{!ruby/symbol key: !ruby/symbol value}` will be parsed as `{ key: :value }`.
+
+Please note: The Configuration is a HashWithIndifferentAccess and thus it should be irrelevant for hashes to use symbol keys.
+
 
 ### disable password login
 
@@ -150,6 +167,11 @@ Note that you have to configure the respective storage (i.e. fog) beforehand as 
 In the case of fog you only have to configure everything under `fog`, however. Don't change `attachments_storage`
 to `fog` just yet. Instead leave it as `file`. This is because the current attachments storage is used as the source
 for the migration.
+
+### Overriding the help link
+
+You can override the default help menu of OpenProject by specifying a `force_help_link` option to
+the configuration. This value is used for the href of the help link, and the default dropdown is removed.
 
 ### hidden menu items
 
@@ -257,7 +279,7 @@ default:
 
 * `email_delivery_method`: The way emails should be delivered. Possible values: `smtp` or `sendmail`
 
-### SMTP Options:
+## SMTP Options:
 
 * `smtp_address`: SMTP server hostname, e.g. `smtp.example.net`
 * `smtp_port`: SMTP server port. Common options are `25` and `587`.
@@ -275,4 +297,10 @@ default:
 * `cache_expires_in`: Expiration time for memcache entries (default: `0`, no expiry)
 * `cache_namespace`: Namespace for cache keys, useful when multiple applications use a single memcache server (default: none)
 
+## Asset Options:
 
+* `rails_asset_host`: A custom host to use to serve static assets such as javascript, CSS, images, etc. (default: `nil`)
+
+## Onboarding Variables:
+
+* 'onboarding_video_url': An URL for the video displayed on the onboarding modal. This is only shown when the user logs in for the first time.

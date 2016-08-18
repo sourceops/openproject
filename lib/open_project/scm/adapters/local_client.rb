@@ -28,10 +28,25 @@
 #++
 
 require 'open3'
+require 'find'
 module OpenProject
   module Scm
     module Adapters
       module LocalClient
+        def self.included(base)
+          base.extend(ClassMethods)
+        end
+
+        module ClassMethods
+          ##
+          # Reads the configuration for this strategy from OpenProject's `configuration.yml`.
+          def config
+            ['scm', vendor].inject(OpenProject::Configuration) do |acc, key|
+              HashWithIndifferentAccess.new acc[key]
+            end
+          end
+        end
+
         ##
         # Determines local capabilities for SCM creation.
         # Overridden by including classes when SCM may be remote.
@@ -40,12 +55,36 @@ module OpenProject
         end
 
         ##
-        # Reads the configuration for this strategy from OpenProject's `configuration.yml`.
-        def config
-          scm_config = OpenProject::Configuration
-          ['scm', vendor].inject(scm_config) do |acc, key|
-            HashWithIndifferentAccess.new acc[key]
+        # Determines whether this repository is eligible
+        # to count storage.
+        def storage_available?
+          local? && File.directory?(local_repository_path)
+        end
+
+        ##
+        # Counts the repository storage requirement immediately
+        # or raises an exception if this is impossible for the current repository.
+        def count_repository!
+          if storage_available?
+            count_required_storage
+          else
+            raise Exceptions::ScmError.new I18n.t('repositories.storage.not_available')
           end
+        end
+
+        ##
+        # Retrieve the local FS path
+        # of this repository.
+        #
+        # Overriden by some vendors, as not
+        # all vendors have a path root_url.
+        # (e.g., subversion uses file:// URLs)
+        def local_repository_path
+          root_url
+        end
+
+        def config
+          self.class.config
         end
 
         ##
@@ -82,10 +121,6 @@ module OpenProject
           ((client_version <=> v) >= 0) || (client_version.empty? && options[:unknown])
         end
 
-        def shell_quote(str)
-          Shellwords.escape(str)
-        end
-
         def supports_cat?
           true
         end
@@ -96,7 +131,7 @@ module OpenProject
 
         def target(path = '')
           base = path.match(/\A\//) ? root_url : url
-          shell_quote("#{base}/#{path}".gsub(/[?<>\*]/, ''))
+          "#{base}/#{path}"
         end
 
         ##
@@ -170,6 +205,60 @@ module OpenProject
           rescue Encoding::InvalidByteSequenceError, Encoding::UndefinedConversionError => err
             logger.error("failed to convert from #{from} to #{to}. #{err}")
             nil
+          end
+        end
+
+        private
+
+        ##
+        # Counts the repositories by files in ruby.
+        # For sake of compatibility, iterates all files
+        # in the repository to determine storage size.
+        #
+        # This is compatible, but quite inefficient, so should
+        # be run asynchronously.
+        def count_required_storage
+          count_storage_du || count_storage_fallback
+        end
+
+        ##
+        # Tries to count the required storage with du,
+        # as that causes the smallest amount of overhead
+        #
+        # Compatible only with GNU du due to `-b` (contains `--apparent-size`)
+        # being unavailable on, e.g., Mac OS X.
+        # On incompatible systems, will fall back to in-ruby counting
+        def count_storage_du
+          output, err, code = Open3.capture3('du', '-bs', local_repository_path)
+
+          if code == 0 && output =~ /^(\d+)/
+            Regexp.last_match(1).to_i
+          else
+            raise SystemCallError.new "'du' exited with non-zero status #{code}: Output was #{err}"
+          end
+        rescue SystemCallError => e
+          # May be raised when the command is not found.
+          # Nothing we can do here.
+          Rails.logger.error("Counting with 'du' failed with: '#{e.message}'." +
+                             'Falling back to in-ruby counting.')
+          nil
+        end
+
+        ##
+        # Count required storage in pure ruby.
+        # Called when `du` didn't seem to be available
+        #
+        # This is compatible, but quite inefficient
+        # being ~25% slower than shelling out to du
+        def count_storage_fallback
+          ::Find.find(local_repository_path).inject(0) do |sum, f|
+            begin
+              sum + File.stat(f).size
+            rescue SystemCallError
+              # File.stat raises for permission and access errors,
+              # we won't be able to get this file's size.
+              sum
+            end
           end
         end
       end

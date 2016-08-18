@@ -32,21 +32,26 @@ class MyController < ApplicationController
 
   before_filter :require_login
 
-  menu_item :account, only: [:account]
-  menu_item :password, only: [:password]
+  menu_item :account,             only: [:account]
+  menu_item :settings,            only: [:settings]
+  menu_item :password,            only: [:password]
+  menu_item :access_token,        only: [:access_token]
+  menu_item :mail_notifications,  only: [:mail_notifications]
 
-  DEFAULT_BLOCKS = { 'issuesassignedtome' => :label_assigned_to_me_work_packages,
+  DEFAULT_BLOCKS = { 'issuesassignedtome'         => :label_assigned_to_me_work_packages,
                      'workpackagesresponsiblefor' => :label_responsible_for_work_packages,
-                     'issuesreportedbyme' => :label_reported_work_packages,
-                     'issueswatched' => :label_watched_work_packages,
-                     'news' => :label_news_latest,
-                     'calendar' => :label_calendar,
-                     'timelog' => :label_spent_time
+                     'issuesreportedbyme'         => :label_reported_work_packages,
+                     'issueswatched'              => :label_watched_work_packages,
+                     'news'                       => :label_news_latest,
+                     'calendar'                   => :label_calendar,
+                     'timelog'                    => :label_spent_time
            }.freeze
 
   DEFAULT_LAYOUT = {  'left' => ['issuesassignedtome'],
                       'right' => ['issuesreportedbyme']
                    }.freeze
+
+  DRAG_AND_DROP_CONTAINERS = ['top', 'left', 'right']
 
   verify xhr: true,
          only: [:add_block, :remove_block, :order_blocks]
@@ -63,22 +68,21 @@ class MyController < ApplicationController
   end
   alias :page :index
 
+  current_menu_item :page do
+    :my_page
+  end
+
   # Edit user's account
   def account
     @user = User.current
     @pref = @user.pref
-    if request.put?
-      @user.attributes = permitted_params.user
-      @user.pref.attributes = params[:pref]
-      @user.pref[:no_self_notified] = (params[:no_self_notified] == '1')
-      if @user.save
-        @user.pref.save
-        @user.notified_project_ids = (@user.mail_notification == 'selected' ? params[:notified_project_ids] : [])
-        set_language_if_valid @user.language
-        flash[:notice] = l(:notice_account_updated)
-        redirect_to action: 'account'
-      end
-    end
+    write_settings(redirect_to: :account)
+  end
+
+  # Edit user's settings
+  def settings
+    @user = User.current
+    write_settings(redirect_to: :settings)
   end
 
   # Manage user's password
@@ -101,27 +105,25 @@ class MyController < ApplicationController
       @user.force_password_change = false
       if @user.save
         flash[:notice] = l(:notice_account_password_updated)
-        redirect_to action: 'account'
+        redirect_to action: 'password'
         return
       end
     else
       flash.now[:error] = l(:notice_account_wrong_password)
     end
-    render 'my/password'
+    # Render the username to hint to a user in case of a forced password change
+    render 'my/password', locals: { show_user_name: @user.force_password_change }
   end
 
-  def first_login
-    if request.get?
-      @user = User.current
-      @back_url = url_for(params[:back_url])
+  # Administer access tokens
+  def access_token
+    @user = User.current
+  end
 
-    elsif request.post? || request.put?
-      User.current.pref.attributes = params[:pref]
-      User.current.pref.save
-
-      flash[:notice] = l(:notice_account_updated)
-      redirect_back_or_default(controller: '/my', action: 'page')
-    end
+  # Configure user's mail notifications
+  def mail_notifications
+    @user = User.current
+    write_email_settings(redirect_to: :mail_notifications) if request.patch?
   end
 
   # Create a new feeds key
@@ -134,7 +136,15 @@ class MyController < ApplicationController
       User.current.rss_key
       flash[:notice] = l(:notice_feeds_access_key_reseted)
     end
-    redirect_to action: 'account'
+    redirect_to action: 'access_token'
+  end
+
+  def generate_rss_key
+    if request.post?
+      User.current.rss_key
+      flash[:notice] = l(:notice_feeds_access_key_generated)
+    end
+    redirect_to action: 'access_token'
   end
 
   # Create a new API key
@@ -147,66 +157,97 @@ class MyController < ApplicationController
       User.current.api_key
       flash[:notice] = l(:notice_api_access_key_reseted)
     end
-    redirect_to action: 'account'
+    redirect_to action: 'access_token'
+  end
+
+  def generate_api_key
+    if request.post?
+      User.current.api_key
+      flash[:notice] = l(:notice_api_access_key_generated)
+    end
+    redirect_to action: 'access_token'
   end
 
   # User's page layout configuration
   def page_layout
-    @user = User.current
-    @blocks = get_current_layout
-    @block_options = []
-    MyController.available_blocks.each { |k, v| @block_options << [l("my.blocks.#{v}", default: [v, v.to_s.humanize]), k.dasherize] }
-  end
+    @user           = User.current
+    @blocks         = get_current_layout
+    @block_options  = []
 
-  # Add a block to user's page
-  # The block is added on top of the page
-  # params[:block] : id of the block to add
-  def add_block
-    block = params[:block].to_s.underscore
-    (render nothing: true; return) unless block && (MyController.available_blocks.keys.include? block)
-    @user = User.current
-    layout = get_current_layout
-    # remove if already present in a group
-    %w(top left right).each { |f| (layout[f] ||= []).delete block }
-    # add it on top
-    layout['top'].unshift block
-    @user.pref[:my_page_layout] = layout
-    @user.pref.save
-    render partial: 'block', locals: { user: @user, block_name: block }
-  end
+    # We track blocks that will show up on the page. This is in order to have
+    # them disabled in the blocks-to-add-to-page dropdown.
+    blocks_on_page =  if User.current.pref[:my_page_layout].present?
+                        User.current.pref[:my_page_layout].values.flatten
+                      else
+                        []
+                      end
 
-  # Remove a block to user's page
-  # params[:block] : id of the block to remove
-  def remove_block
-    block = params[:block].to_s.underscore
-    @user = User.current
-    # remove block in all groups
-    layout = get_current_layout
-    %w(top left right).each { |f| (layout[f] ||= []).delete block }
-    @user.pref[:my_page_layout] = layout
-    @user.pref.save
-    render nothing: true
-  end
-
-  # Change blocks order on user's page
-  # params[:group] : group to order (top, left or right)
-  # params[:list-(top|left|right)] : array of block ids of the group
-  def order_blocks
-    group = params[:group]
-    @user = User.current
-    if group.is_a?(String)
-      group_items = (params["list-#{group}"] || []).map(&:underscore)
-      if group_items and group_items.is_a? Array
-        layout = get_current_layout
-        # remove group blocks if they are presents in other groups
-        %w(top left right).each {|f|
-          layout[f] = (layout[f] || []) - group_items
-        }
-        layout[group] = group_items
-        @user.pref[:my_page_layout] = layout
-        @user.pref.save
+    MyController.available_blocks.each do |block, value|
+      if blocks_on_page.include?(block)
+        @block_options << [l("my.blocks.#{value}", default: [value, value.to_s.humanize]), block.dasherize, disabled: true]
+      else
+        @block_options << [l("my.blocks.#{value}", default: [value, value.to_s.humanize]), block.dasherize]
       end
     end
+  end
+
+  # Add a block to the user's page at the top.
+  # params[:block] : id of the block to add
+  #
+  # Responds with a JS layout.
+  def add_block
+    @block = params[:block].to_s.underscore
+
+    unless MyController.available_blocks.keys.include? @block
+      render nothing: true
+      return
+    end
+
+    @user  = User.current
+    layout = get_current_layout
+
+    # Remove if already present in a group.
+    DRAG_AND_DROP_CONTAINERS.each { |f| (layout[f] ||= []).delete @block }
+
+    # Add it on top.
+    layout['top'].unshift @block
+
+    # Save user preference.
+    @user.pref[:my_page_layout] = layout
+    @user.pref.save
+  end
+
+  # Remove a block from the user's `my` page.
+  # params[:block] : id of the block to remove
+  #
+  # Responds with a JS layout.
+  def remove_block
+    @block = params[:block].to_s.underscore
+    @user  = User.current
+
+    # Remove block in all groups.
+    layout = get_current_layout
+    DRAG_AND_DROP_CONTAINERS.each { |f| (layout[f] ||= []).delete @block }
+
+    # Save user preference.
+    @user.pref[:my_page_layout] = layout
+    @user.pref.save
+  end
+
+  def order_blocks
+    @user = User.current
+
+    layout = get_current_layout
+
+    # A nil +params[source_ordered_children]+ means all elements within
+    # +params['source']+ were dragged out elsewhere.
+    layout[params['source']] = params['source_ordered_children'] || []
+
+    layout[params['target']] = params['target_ordered_children']
+
+    @user.pref[:my_page_layout] = layout
+    @user.pref.save
+
     render nothing: true
   end
 
@@ -223,6 +264,38 @@ class MyController < ApplicationController
       return true
     end
     false
+  end
+
+  def write_email_settings(redirect_to:)
+    update_service = UpdateUserEmailSettingsService.new(@user)
+    if update_service.call(mail_notification: permitted_params.user[:mail_notification],
+                           self_notified: params[:self_notified] == '1',
+                           notified_project_ids: params[:notified_project_ids])
+      flash[:notice] = l(:notice_account_updated)
+      redirect_to(action: redirect_to)
+    end
+  end
+
+  def write_settings(redirect_to:)
+    if request.patch?
+      @user.attributes = permitted_params.user
+      @user.pref.attributes = if params[:pref].present?
+                                permitted_params.pref
+                              else
+                                {}
+                              end
+      if @user.save
+        @user.pref.save
+        flash[:notice] = l(:notice_account_updated)
+        redirect_to(action: redirect_to)
+      end
+    end
+  end
+
+  helper_method :has_tokens?
+
+  def has_tokens?
+    Setting.feeds_enabled? || Setting.rest_api_enabled?
   end
 
   def get_current_layout

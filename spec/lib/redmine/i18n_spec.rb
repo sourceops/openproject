@@ -39,7 +39,7 @@ module OpenProject
     end
 
     describe 'with user time zone' do
-      before { allow(User.current).to receive(:time_zone).and_return(ActiveSupport::TimeZone['Athens']) }
+      before do allow(User.current).to receive(:time_zone).and_return(ActiveSupport::TimeZone['Athens']) end
       it 'returns a date in the user timezone for a utc timestamp' do
         Time.zone = 'UTC'
         time = Time.zone.local(2013, 06, 30, 23, 59)
@@ -54,7 +54,7 @@ module OpenProject
     end
 
     describe 'without user time zone' do
-      before { allow(User.current).to receive(:time_zone).and_return(nil) }
+      before do allow(User.current).to receive(:time_zone).and_return(nil) end
 
       it 'returns a date in the local system timezone for a utc timestamp' do
         Time.zone = 'UTC'
@@ -71,7 +71,6 @@ module OpenProject
     end
 
     describe 'all_languages' do
-
       # Those are the two languages we support
       it 'includes en' do
         expect(all_languages).to include(:en)
@@ -87,9 +86,9 @@ module OpenProject
       # it is OK if more languages exist
       it 'has a language for every language file' do
         lang_files_count = Dir.glob(Rails.root.join('config/locales/*.yml'))
-                              .map { |f| File.basename(f) }
-                              .reject { |b| b.starts_with? 'js' }
-                              .size
+                           .map { |f| File.basename(f) }
+                           .reject { |b| b.starts_with? 'js' }
+                           .size
 
         expect(all_languages.size).to eql lang_files_count
       end
@@ -131,22 +130,58 @@ module OpenProject
     end
 
     describe 'find_language' do
-      it 'is nil if language is not active' do
+      before do
         allow(Setting).to receive(:available_languages).and_return([:de])
+      end
 
+      it 'is nil if language is not active' do
         expect(find_language(:en)).to be_nil
       end
 
-      it 'is the language if it is active' do
-        allow(Setting).to receive(:available_languages).and_return([:de])
+      it 'is nil if no language is given' do
+        expect(find_language('')).to be_nil
+        expect(find_language(nil)).to be_nil
+      end
 
+      it 'is the language if it is active' do
         expect(find_language(:de)).to eql :de
       end
 
       it 'can be found by uppercase if it is active' do
-        allow(Setting).to receive(:available_languages).and_return([:de])
-
         expect(find_language(:DE)).to eql :de
+      end
+    end
+
+    describe 'link_translation' do
+      let(:locale) { :en }
+      let(:urls) {
+        { url_1: 'http://openproject.com/foobar', url_2: '/baz' }
+      }
+
+      before do
+        allow(::I18n)
+          .to receive(:t)
+          .with('translation_with_a_link', locale: locale)
+          .and_return('There is a [link](url_1) in this translation! Maybe even [two](url_2)?')
+      end
+
+      it 'allows to insert links into translations' do
+        translated = link_translate :translation_with_a_link, links: urls
+
+        expect(translated).to eq(
+          "There is a <a href=\"http://openproject.com/foobar\">link</a> in this translation!" +
+          " Maybe even <a href=\"/baz\">two</a>?")
+      end
+
+      context 'with locale' do
+        let(:locale) { :de }
+        it 'uses the passed locale' do
+          translated = link_translate :translation_with_a_link, links: urls, locale: locale
+
+          expect(translated).to eq(
+            "There is a <a href=\"http://openproject.com/foobar\">link</a> in this translation!" +
+            " Maybe even <a href=\"/baz\">two</a>?")
+        end
       end
     end
   end

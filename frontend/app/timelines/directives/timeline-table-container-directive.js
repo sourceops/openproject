@@ -77,10 +77,6 @@ module.exports = function(TimelineLoaderService, TimelineTableHelper, SvgHelper,
       function buildWorkPackageTable(timeline){
         timeline.lefthandTree = null; // reset cached data tree
 
-        if (timeline.isGrouping() && timeline.options.grouping_two_enabled) {
-          timeline.secondLevelGroupingAdjustments();
-        }
-
         var tree = timeline.getLefthandTree();
 
         if (tree.containsPlanningElements() || tree.containsProjects()) {
@@ -134,7 +130,7 @@ module.exports = function(TimelineLoaderService, TimelineTableHelper, SvgHelper,
           scope.timeline,
           {
             url_prefix                : PathHelper.staticBase,
-            project_prefix            : PathHelper.projectsPath()
+            project_prefix            : '/projects'
           }
         );
 

@@ -35,123 +35,7 @@ angular.module('openproject.workPackages.controllers')
   .constant('USER_TYPE', 'user')
   .constant('TIME_ENTRY_TYPE', 'time_entry')
   .constant('USER_FIELDS', ['assignee', 'author', 'responsible'])
-  .controller('DetailsTabOverviewController', [
-    '$scope',
-    'WorkPackagesOverviewService',
-    'WorkPackageFieldService',
-    'EditableFieldsState',
-    'WorkPackagesDisplayHelper',
-    'NotificationsService',
-    'I18n',
-    require('./details-tab-overview-controller')
-  ])
   .constant('ADD_WATCHER_SELECT_INDEX', -1)
-  .controller('DetailsTabWatchersController', ['$scope',
-    '$filter',
-    '$timeout',
-    'I18n',
-    'ADD_WATCHER_SELECT_INDEX', require('./details-tab-watchers-controller')
-  ])
-  .constant('RELATION_TYPES', {
-    relatedTo: "Relation::Relates",
-    duplicates: "Relation::Duplicates",
-    duplicated: "Relation::Duplicated",
-    blocks: "Relation::Blocks",
-    blocked: "Relation::Blocked",
-    precedes: "Relation::Precedes",
-    follows: "Relation::Follows"
-  })
-  .constant('RELATION_IDENTIFIERS', {
-    parent: "parent",
-    relatedTo: "relates",
-    duplicates: "duplicates",
-    duplicated: "duplicated",
-    blocks: "blocks",
-    blocked: "blocked",
-    precedes: "precedes",
-    follows: "follows"
-  })
-  .controller('WorkPackageDetailsController', [
-    '$scope',
-    '$state',
-    'latestTab',
-    'workPackage',
-    'I18n',
-    'RELATION_TYPES',
-    'RELATION_IDENTIFIERS',
-    '$q',
-    'WorkPackagesHelper',
-    'PathHelper',
-    'UsersHelper',
-    'ConfigurationService',
-    'WorkPackageService',
-    'CommonRelationsHandler',
-    'ChildrenRelationsHandler',
-    'ParentRelationsHandler',
-    'EditableFieldsState',
-    require('./work-package-details-controller')
-  ])
-  .controller('WorkPackageNewController', [
-    '$scope',
-    '$rootScope',
-    '$state',
-    '$stateParams',
-    '$timeout',
-    '$window',
-    'PathHelper',
-    'WorkPackagesOverviewService',
-    'WorkPackageFieldService',
-    'WorkPackageService',
-    'EditableFieldsState',
-    'WorkPackagesDisplayHelper',
-    require('./work-package-new-controller')
-  ])
-  .controller('WorkPackagesController', [
-    '$scope',
-    '$state',
-    '$stateParams',
-    'QueryService',
-    'PathHelper',
-    '$rootScope',
-    require('./work-packages-controller')
-  ])
-  .controller('WorkPackagesListController', [
-    '$scope',
-    '$rootScope',
-    '$state',
-    '$location',
-    'latestTab',
-    'I18n',
-    'WorkPackagesTableService',
-    'WorkPackageService',
-    'ProjectService',
-    'QueryService',
-    'PaginationService',
-    'AuthorisationService',
-    'UrlParamsHelper',
-    'PathHelper',
-    'Query',
-    'OPERATORS_AND_LABELS_BY_FILTER_TYPE',
-    require('./work-packages-list-controller')
-  ])
-  .factory('columnsModal', ['btfModal', function(btfModal) {
-    return btfModal({
-      controller: 'ColumnsModalController',
-      controllerAs: 'modal',
-      templateUrl: '/templates/work_packages/modals/columns.html',
-      afterFocusOn: '#work-packages-settings-button'
-    });
-  }])
-  .controller('ColumnsModalController', ['$scope',
-    '$filter',
-    'columnsModal',
-    'QueryService',
-    'WorkPackageService',
-    'WorkPackagesTableService',
-    '$rootScope',
-    '$timeout',
-    require('./dialogs/columns')
-  ])
   .factory('exportModal', ['btfModal', function(btfModal) {
     return btfModal({
       controller: 'ExportModalController',
@@ -195,6 +79,7 @@ angular.module('openproject.workPackages.controllers')
     'QueryService',
     'AuthorisationService',
     '$state',
+    'NotificationsService',
     require('./dialogs/save')
   ])
   .factory('settingsModal', ['btfModal', function(btfModal) {
@@ -212,6 +97,7 @@ angular.module('openproject.workPackages.controllers')
     'AuthorisationService',
     '$rootScope',
     'QUERY_MENU_ITEM_TYPE',
+    'NotificationsService',
     require('./dialogs/settings')
   ])
   .factory('shareModal', ['btfModal', function(btfModal) {
@@ -229,6 +115,7 @@ angular.module('openproject.workPackages.controllers')
     'AuthorisationService',
     'queryMenuItemFactory',
     'PathHelper',
+    'NotificationsService',
     require('./dialogs/share')
   ])
   .factory('sortingModal', ['btfModal', function(btfModal) {
